@@ -116,8 +116,14 @@ def truncated_right_svd(
     """
     u_tensor, s_vec, v_mat = right_svd(mps_tensor)
     cut_sum = 0
-    thresh_sq = threshold**2
+    # thresh_sq = threshold**2
+    thresh_sq = sim_params.threshold
     cut_index = 1
+
+    norm = np.linalg.norm(s_vec)
+    if norm > 0:
+        s_vec = s_vec / norm
+    print('uses truncated_right_svd')
     for i, s_val in enumerate(np.flip(s_vec)):
         cut_sum += s_val**2
         if cut_sum >= thresh_sq:
@@ -128,4 +134,8 @@ def truncated_right_svd(
     u_tensor = u_tensor[:, :, :cut_index]
     s_vec = s_vec[:cut_index]
     v_mat = v_mat[:cut_index, :]
+
+    norm = np.linalg.norm(s_vec)
+    if norm > 0:
+        s_vec = s_vec / norm
     return u_tensor, s_vec, v_mat

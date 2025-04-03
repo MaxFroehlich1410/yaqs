@@ -86,18 +86,31 @@ def split_mps_tensor(
     )
     u_mat, sigma, v_mat = np.linalg.svd(matrix_for_svd, full_matrices=False)
 
+    
+    norm = np.linalg.norm(sigma)
+    if norm > 0:
+        sigma = sigma / norm
+    print(f"‖σ‖² before truncation: {np.sum(sigma**2):.16f}")
+
     cut_sum = 0
-    thresh_sq = sim_params.threshold**2
+    thresh = sim_params.threshold
+
     cut_index = 1
     for i, s_val in enumerate(np.flip(sigma)):
         cut_sum += s_val**2
-        if cut_sum >= thresh_sq:
+        if cut_sum >= thresh:
             cut_index = len(sigma) - i
             break
     if sim_params.max_bond_dim is not None:
         cut_index = min(cut_index, sim_params.max_bond_dim)
     left_tensor = u_mat[:, :cut_index]
     sigma = sigma[:cut_index]
+
+    #normalize after truncation
+    norm = np.linalg.norm(sigma)
+    if norm > 0:
+        sigma = sigma / norm
+    print(f"‖σ‖² before truncation: {np.sum(sigma**2):.16f}")
     right_tensor = v_mat[:cut_index, :]
 
     # Reshape U and Vh back to tensor form:
