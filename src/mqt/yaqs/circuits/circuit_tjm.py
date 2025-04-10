@@ -161,6 +161,7 @@ def apply_window(
     """
     # Define a window for a local update.
     assert sim_params.window_size is not None
+    sim_params.window_size = 1
     window = [first_site - sim_params.window_size, last_site + sim_params.window_size]
     window[0] = max(window[0], 0)
     window[1] = min(window[1], state.length - 1)
@@ -196,11 +197,13 @@ def apply_two_qubit_gate(state: MPS, node: DAGOpNode, sim_params: StrongSimParam
     mpo, first_site, last_site = construct_generator_mpo(gate, state.length)
 
     if sim_params.window_size is not None:
+        sim_params.window_size = 1
         short_state, short_mpo, window = apply_window(state, mpo, first_site, last_site, sim_params)
         dynamic_tdvp(short_state, short_mpo, sim_params)
         # Replace the updated tensors back into the full state.
         for i in range(window[0], window[1] + 1):
             state.tensors[i] = short_state.tensors[i - window[0]]
+        
     else:
         dynamic_tdvp(state, mpo, sim_params)
 
@@ -246,6 +249,7 @@ def circuit_tjm(
                 apply_dissipation(state, noise_model, dt=1)
                 state = stochastic_process(state, noise_model, dt=1)
                 dag.remove_op_node(node)
+        print('TDVP bond dim', state.write_max_bond_dim())
 
     if isinstance(sim_params, WeakSimParams):
         if not noise_model or all(gamma == 0 for gamma in noise_model.strengths):

@@ -20,6 +20,8 @@ respective Hamiltonians.
 
 from __future__ import annotations
 
+import numpy as np
+
 from qiskit.circuit import QuantumCircuit
 
 
@@ -69,6 +71,7 @@ def create_ising_circuit(
         # If periodic, add an additional long-range gate between qubit L-1 and qubit 0.
         if periodic and L > 1:
             circ.rzz(beta, qubit1=0, qubit2=L - 1)
+        circ.barrier()
 
     return circ
 
@@ -135,6 +138,7 @@ def create_2d_ising_circuit(
                 q1 = site_index(row, col)
                 q2 = site_index(row + 1, col)
                 circ.rzz(beta, q1, q2)
+        circ.barrier()
 
     return circ
 
@@ -198,6 +202,7 @@ def create_heisenberg_circuit(
 
         if L % 2 != 0 and L != 1:
             circ.ryy(theta=theta_yy, qubit1=L - 2, qubit2=L - 1)
+        circ.barrier()
 
     return circ
 
@@ -321,5 +326,264 @@ def create_2d_heisenberg_circuit(
                 q1 = site_index(row, col)
                 q2 = site_index(row + 1, col)
                 circ.ryy(theta_yy, q1, q2)
+        circ.barrier()
 
     return circ
+
+
+
+def create_highly_entangling_circuit(n_qubits, n_layers, seed=None):
+    """
+    Creates a highly entangling circuit with the given number of qubits and layers.
+    
+    Each layer applies random single-qubit rotations (Rz-Ry-Rz) on every qubit and
+    then applies entangling CNOT gates in a ring pattern and between next-nearest neighbors.
+    
+    Parameters:
+      n_qubits (int): Number of qubits.
+      n_layers (int): Number of layers.
+      seed (int, optional): Seed for random number generation.
+      
+    Returns:
+      QuantumCircuit: The resulting highly entangling circuit.
+    """
+    if seed is not None:
+        random.seed(seed)
+        np.random.seed(seed)
+        
+    qc = QuantumCircuit(n_qubits)
+    
+    for layer in range(n_layers):
+        # Apply random single-qubit rotations to each qubit.
+        for q in range(n_qubits):
+            theta = random.uniform(0, 2*np.pi)
+            phi = random.uniform(0, 2*np.pi)
+            lam = random.uniform(0, 2*np.pi)
+            qc.rz(theta, q)
+            qc.ry(phi, q)
+            qc.rz(lam, q)
+        
+        # Apply entangling gates:
+        # 1. Nearest-neighbor entanglement (ring connectivity)
+        for i in range(n_qubits):
+            qc.cx(i, (i+1) % n_qubits)
+        # 2. Next-nearest neighbor entanglement
+        for i in range(n_qubits):
+            qc.cx(i, (i+2) % n_qubits)
+        
+        # Add a barrier to separate layers.
+        qc.barrier()
+        
+    return qc
+
+
+
+
+def entanglement_circuit(n_qubits, n_layers, seed=None):
+    """
+    Creates a multi-layer entangling circuit using Hadamard and CNOT gates.
+    
+    Parameters:
+        n_qubits (int): Number of qubits in the circuit.
+        n_layers (int): Number of entangling layers to apply.
+        seed (int, optional): Seed for reproducibility of CNOT patterns.
+
+    Returns:
+        QuantumCircuit: A Qiskit circuit object.
+    """
+    import random
+    if seed is not None:
+        random.seed(seed)
+
+    qc = QuantumCircuit(n_qubits)
+
+    for layer in range(n_layers):
+        # Apply Hadamard to all qubits
+        for i in range(n_qubits):
+            qc.h(i)
+
+        # Apply random CNOT entanglement (linear nearest neighbor or random pairings)
+        for i in range(0, n_qubits - 1, 2):
+            if random.random() < 0.5:
+                control, target = i, i+1
+            else:
+                control, target = i+1, i
+            qc.cx(control, target)
+
+        qc.barrier()
+
+    return qc
+
+
+
+
+def brickwork_random_circuit(n_qubits: int, layers: int, seed: int = None) -> QuantumCircuit:
+    if seed is not None:
+        np.random.seed(seed)
+
+    qc = QuantumCircuit(n_qubits)
+    for layer in range(layers):
+        start = layer % 2  # Even or odd layer
+        for i in range(start, n_qubits - 1, 2):
+            theta, phi, lam = 2 * np.pi * np.random.rand(3)
+            qc.cx(i, i + 1)
+            qc.u(theta, phi, lam, i)
+            qc.u(theta, phi, lam, i + 1)
+        qc.barrier()
+    return qc
+
+
+def qaoa_maxcut_ring(n_qubits: int, layers: int, gamma: float = 0.8, beta: float = 0.7) -> QuantumCircuit:
+    qc = QuantumCircuit(n_qubits)
+    
+    # Initial state: uniform superposition
+    for i in range(n_qubits):
+        qc.h(i)
+    
+    for _ in range(layers):
+        # Cost unitary: ZZ terms for MaxCut
+        for i in range(n_qubits):
+            j = (i + 1) % n_qubits  # Periodic boundary
+            qc.cx(i, j)
+            qc.rz(2 * gamma, j)
+            qc.cx(i, j)
+        
+        # Mixer unitary: X rotations
+        for i in range(n_qubits):
+            qc.rx(2 * beta, i)
+        qc.barrier()
+    
+    return qc
+
+
+def floquet_circuit(n_qubits: int, layers: int, J: float = 1.0, h: float = 1.0) -> QuantumCircuit:
+    qc = QuantumCircuit(n_qubits)
+    
+    for _ in range(layers):
+        # Entangling ZZ layer (Trotterized)
+        for i in range(n_qubits - 1):
+            qc.cx(i, i + 1)
+            qc.rz(2 * J, i + 1)
+            qc.cx(i, i + 1)
+        
+        # Global X field
+        for i in range(n_qubits):
+            qc.rx(2 * h, i)
+        qc.barrier()
+    
+    return qc
+
+
+
+
+def hard_local_circuit(n_qubits: int, depth: int, seed: int = 42) -> QuantumCircuit:
+    """
+    Builds a brickwork-style circuit with only nearest-neighbor CZ gates
+    and random non-Clifford single-qubit rotations. Generates volume-law entanglement.
+
+    Parameters:
+        n_qubits (int): Number of qubits in the circuit.
+        depth (int): Number of brickwork layers (2-qubit + 1-qubit).
+        seed (int): Random seed for reproducibility.
+
+    Returns:
+        QuantumCircuit: The constructed Qiskit circuit.
+    """
+    rng = np.random.default_rng(seed)
+    qc = QuantumCircuit(n_qubits)
+
+    for layer in range(depth):
+        # 1. Single-qubit non-Clifford rotations
+        for i in range(n_qubits):
+            theta = 2 * np.pi * rng.random()
+            phi = 2 * np.pi * rng.random()
+            lam = 2 * np.pi * rng.random()
+            qc.u(theta, phi, lam, i)  # Arbitrary SU(2) rotation
+
+        # 2. Nearest-neighbor CZ gates (brickwork pattern)
+        start = layer % 2  # even vs. odd layer
+        for i in range(start, n_qubits - 1, 2):
+            qc.h(i + 1)
+            qc.cx(i, i + 1)
+            qc.h(i + 1)  # CZ via Hadamard sandwich
+        qc.barrier()
+
+    return qc
+
+
+def local_plus_next_nearest_circuit(n_qubits: int, depth: int, seed: int = 123) -> QuantumCircuit:
+    """
+    Builds a circuit with nearest-neighbor and next-nearest-neighbor 2-qubit gates,
+    plus random single-qubit unitaries.
+
+    Parameters:
+        n_qubits (int): Number of qubits in the circuit.
+        depth (int): Number of layers.
+        seed (int): RNG seed.
+
+    Returns:
+        QuantumCircuit: The generated circuit.
+    """
+    rng = np.random.default_rng(seed)
+    qc = QuantumCircuit(n_qubits)
+
+    for layer in range(depth):
+        # 1. Single-qubit unitaries
+        for i in range(n_qubits):
+            theta = 2 * np.pi * rng.random()
+            phi = 2 * np.pi * rng.random()
+            lam = 2 * np.pi * rng.random()
+            qc.u(theta, phi, lam, i)
+
+        # 2. Nearest-neighbor CZ-like gates (layer parity alternates even/odd)
+        start = layer % 2
+        for i in range(start, n_qubits - 1, 2):
+            qc.h(i + 1)
+            qc.cx(i, i + 1)
+            qc.h(i + 1)
+
+        # 3. Next-nearest-neighbor CZ-like gates (layer parity alternates)
+        start = (layer + 1) % 2
+        for i in range(start, n_qubits - 2, 2):
+            qc.h(i + 2)
+            qc.cx(i, i + 2)
+            qc.h(i + 2)
+        qc.barrier()
+
+    return qc
+
+
+def local_range_k_circuit(n_qubits: int, depth: int, k: int, seed: int = 42) -> QuantumCircuit:
+    """
+    Generates a circuit with single-qubit unitaries and entangling gates up to range k.
+
+    Parameters:
+        n_qubits (int): Number of qubits.
+        depth (int): Number of layers (each includes single-qubit and range-k entanglers).
+        k (int): Maximum range of two-qubit gates (i, i + r) for r in [1, k].
+        seed (int): RNG seed for reproducibility.
+
+    Returns:
+        QuantumCircuit: The generated circuit.
+    """
+    qc = QuantumCircuit(n_qubits)
+    rng = np.random.default_rng(seed)
+
+    for layer in range(depth):
+        # 1. Random single-qubit unitaries
+        for i in range(n_qubits):
+            theta, phi, lam = 2 * np.pi * rng.random(3)
+            qc.u(theta, phi, lam, i)
+
+        # 2. Two-qubit CZ-like gates at increasing distances
+        for r in range(1, k + 1):
+            offset = (layer + r) % r  # stagger to prevent gate collisions
+            for i in range(offset, n_qubits - r, 2 * r):
+                qc.h(i + r)
+                qc.cx(i, i + r)
+                qc.h(i + r)
+        qc.barrier()
+
+    return qc
+
+
