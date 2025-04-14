@@ -289,7 +289,7 @@ class MPS:
         if decomposition == "QR":
             site_tensor, bond_tensor = right_qr(tensor)
         elif decomposition == "SVD":
-            site_tensor, s_vec, v_mat = truncated_right_svd(tensor, threshold=1e-12, max_bond_dim=None)
+            site_tensor, s_vec, v_mat = truncated_right_svd(tensor, threshold=None, max_bond_dim=None)
             bond_tensor = np.diag(s_vec) @ v_mat
         self.tensors[current_orthogonality_center] = site_tensor
 
@@ -555,8 +555,8 @@ class MPS:
         Checks what canonical form a Matrix Product State (MPS) is in, if any.
         This method verifies if the MPS is in left-canonical form, right-canonical form, or mixed-canonical form.
         It returns a list indicating the canonical form status:
-        - [0] if the MPS is in left-canonical form.
-        - [self.length - 1] if the MPS is in right-canonical form.
+        - [0] if the MPS is in right-canonical form.
+        - [self.length - 1] if the MPS is in left-canonical form.
         - [index] if the MPS is in mixed-canonical form, where `index` is the position where the form changes.
         - [-1] if the MPS is not in any canonical form.
 

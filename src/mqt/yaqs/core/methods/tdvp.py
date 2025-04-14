@@ -88,38 +88,36 @@ def split_mps_tensor(
 
     # print('bond dim in 2TDVP before truncation', len(sigma))
 
-    
-    norm = np.linalg.norm(sigma)
-    if norm > 0:
-        sigma = sigma / norm
-    # print(f"‖σ‖² before truncation: {np.sum(sigma**2):.16f}")
+    # # With truncation
+    # cut_sum = 0
+    # thresh_sq = sim_params.threshold**2
+    # cut_index = 1
+    # for i, s_val in enumerate(np.flip(sigma)):
+    #     cut_sum += s_val**2
+    #     if cut_sum >= thresh_sq:
+    #         cut_index = len(sigma) - i
+    #         break
+    # if sim_params.max_bond_dim is not None:
+    #     cut_index = min(cut_index, sim_params.max_bond_dim)
 
-    cut_sum = 0
-    thresh = sim_params.threshold
+    # left_tensor = u_mat[:, :cut_index]
+    # sigma = sigma[:cut_index]
+    # right_tensor = v_mat[:cut_index, :]
+    # norm = np.linalg.norm(sigma)
+    # if norm > 0:
+    #     sigma = sigma / norm
 
-    cut_index = 1
-    for i, s_val in enumerate(np.flip(sigma)):
-        cut_sum += s_val**2
-        if cut_sum >= thresh:
-            cut_index = len(sigma) - i
-            break
-    if sim_params.max_bond_dim is not None:
-        cut_index = min(cut_index, sim_params.max_bond_dim)
-    left_tensor = u_mat[:, :cut_index]
-    sigma = sigma[:cut_index]
+    # Without truncation
+    left_tensor = u_mat
+    sigma = sigma
+    right_tensor = v_mat
 
-    #normalize after truncation
-    norm = np.linalg.norm(sigma)
-    if norm > 0:
-        sigma = sigma / norm
-    # print(f"‖σ‖² before truncation: {np.sum(sigma**2):.16f}")
-    right_tensor = v_mat[:cut_index, :]
 
     # Reshape U and Vh back to tensor form:
     # U to shape (d0, D0, num_sv)
-    left_tensor = left_tensor.reshape((shape_transposed[0], shape_transposed[1], cut_index))
+    left_tensor = left_tensor.reshape((shape_transposed[0], shape_transposed[1], len(sigma)))
     # Vh reshaped to (num_sv, d1, D2)
-    right_tensor = right_tensor.reshape((cut_index, shape_transposed[2], shape_transposed[3]))
+    right_tensor = right_tensor.reshape((len(sigma), shape_transposed[2], shape_transposed[3]))
 
     # Distribute the singular values according to the chosen option
     if svd_distribution == "left":
@@ -395,7 +393,7 @@ def single_site_tdvp(
     state: MPS,
     hamiltonian: MPO,
     sim_params: PhysicsSimParams | StrongSimParams | WeakSimParams,
-    numiter_lanczos: int = 25,
+    numiter_lanczos: int = 50,
 ) -> None:
     """Perform symmetric single-site Time-Dependent Variational Principle (TDVP) integration.
 
@@ -503,7 +501,7 @@ def two_site_tdvp(
     state: MPS,
     hamiltonian: MPO,
     sim_params: PhysicsSimParams | StrongSimParams | WeakSimParams,
-    numiter_lanczos: int = 25,
+    numiter_lanczos: int = 50,
 ) -> None:
     """Perform symmetric two-site TDVP integration.
 
@@ -553,8 +551,6 @@ def two_site_tdvp(
         merged_tensor = update_site(
             left_blocks[i], right_blocks[i + 1], merged_mpo, merged_tensor, 0.5 * sim_params.dt, numiter_lanczos
         )
-        
-
         state.tensors[i], state.tensors[i + 1] = split_mps_tensor(merged_tensor, "right", sim_params)
         left_blocks[i + 1] = update_left_environment(
             state.tensors[i], state.tensors[i], hamiltonian.tensors[i], left_blocks[i]
@@ -581,7 +577,6 @@ def two_site_tdvp(
     # Only a single sweep is needed for circuits
     if isinstance(sim_params, (WeakSimParams, StrongSimParams)):
         state.tensors[i], state.tensors[i + 1] = split_mps_tensor(merged_tensor, "right", sim_params)
-        
         return
 
     state.tensors[i], state.tensors[i + 1] = split_mps_tensor(merged_tensor, "left", sim_params=sim_params)

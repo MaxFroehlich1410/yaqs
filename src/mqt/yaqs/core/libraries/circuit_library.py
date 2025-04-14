@@ -21,7 +21,7 @@ respective Hamiltonians.
 from __future__ import annotations
 
 import numpy as np
-
+import random
 from qiskit.circuit import QuantumCircuit
 
 
@@ -583,6 +583,7 @@ def local_range_k_circuit(n_qubits: int, depth: int, k: int, seed: int = 42) -> 
                 qc.cx(i, i + r)
                 qc.h(i + r)
         qc.barrier()
+    print(qc)
 
     return qc
 
