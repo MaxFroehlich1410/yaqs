@@ -114,29 +114,20 @@ def truncated_right_svd(
         v_mat: The V matrix with the right virtual leg (new,right).
 
     """
-    u_tensor, s_vec, v_mat = right_svd(mps_tensor)
-    
-    # Step 1: apply max_bond_dim limit first
-    if max_bond_dim is not None:
-        s_vec = s_vec[:max_bond_dim]
 
-    # Step 2: compute truncation threshold from back
+    
+    u_tensor, s_vec, v_mat = right_svd(mps_tensor)
     cut_sum = 0
-    cut_index = len(s_vec)
+    thresh_sq = threshold**2
+    cut_index = 1
     for i, s_val in enumerate(np.flip(s_vec)):
         cut_sum += s_val**2
-        if cut_sum >= threshold:
+        if cut_sum >= thresh_sq:
             cut_index = len(s_vec) - i
             break
-
-    # Step 3: apply cut
-    s_vec = s_vec[:cut_index]
+    if max_bond_dim is not None:
+        cut_index = min(cut_index, max_bond_dim)
     u_tensor = u_tensor[:, :, :cut_index]
+    s_vec = s_vec[:cut_index]
     v_mat = v_mat[:cut_index, :]
-
-    # Step 4: normalize
-    norm = np.linalg.norm(s_vec)
-    if norm > 0:
-        s_vec = s_vec / norm
-
     return u_tensor, s_vec, v_mat
