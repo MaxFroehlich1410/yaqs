@@ -200,7 +200,7 @@ def apply_two_qubit_gate(state: MPS, node: DAGOpNode, sim_params: StrongSimParam
         short_state, short_mpo, window = apply_window(state, mpo, first_site, last_site, sim_params)
         dynamic_tdvp(short_state, short_mpo, sim_params)
         # Replace the updated tensors back into the full state.
-        state.truncate(sim_params.threshold, sim_params_max_bond_dim)
+        
         for i in range(window[0], window[1] + 1):
             state.tensors[i] = short_state.tensors[i - window[0]]
     else:
