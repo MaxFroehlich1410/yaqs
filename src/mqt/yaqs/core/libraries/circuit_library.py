@@ -450,7 +450,7 @@ def qaoa_maxcut_ring(n_qubits: int, layers: int, gamma: float = 0.8, beta: float
         # Cost unitary: ZZ terms for MaxCut
         for i in range(n_qubits):
             j = (i + 1) % n_qubits  # Periodic boundary
-            qc.cx(i, j)
+            qc.(i, j)
             qc.rz(2 * gamma, j)
             qc.cx(i, j)
         
@@ -587,6 +587,7 @@ def local_range_k_circuit(n_qubits: int, depth: int, k: int, seed: int = 42) -> 
             for i in range(offset, n_qubits - r, 2 * r):
                 qc.h(i + r)
                 qc.cx(i, i + r)
+                qc.barrier()
                 qc.h(i + r)
         qc.barrier()
     print(qc)
