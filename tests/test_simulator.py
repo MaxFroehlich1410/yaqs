@@ -31,6 +31,7 @@ from mqt.yaqs.core.data_structures.simulation_parameters import (
     WeakSimParams,
 )
 from mqt.yaqs.core.libraries.circuit_library import create_ising_circuit
+from mqt.yaqs.core.libraries.gate_library import X, Z
 
 
 def test_physics_simulation() -> None:
@@ -55,7 +56,7 @@ def test_physics_simulation() -> None:
     threshold = 1e-6
     order = 2
 
-    measurements = [Observable("z", site) for site in range(length)]
+    measurements = [Observable(Z(), site) for site in range(length)]
     sim_params = PhysicsSimParams(
         measurements, elapsed_time, dt, num_traj, max_bond_dim, threshold, order, sample_timesteps=sample_timesteps
     )
@@ -103,7 +104,7 @@ def test_physics_simulation_parallel_off() -> None:
     threshold = 1e-6
     order = 2
 
-    measurements = [Observable("z", site) for site in range(length)]
+    measurements = [Observable(Z(), site) for site in range(length)]
     sim_params = PhysicsSimParams(
         measurements, elapsed_time, dt, num_traj, max_bond_dim, threshold, order, sample_timesteps=sample_timesteps
     )
@@ -147,9 +148,9 @@ def test_physics_simulation_get_state() -> None:
         sample_timesteps = False
         num_traj = 1
         max_bond_dim = 4
-        threshold = 1e-6
+        threshold = 1e-12
 
-        measurements = [Observable("x", length // 2)]
+        measurements = [Observable(X(), length // 2)]
         sim_params = PhysicsSimParams(
             measurements,
             elapsed_time,
@@ -195,7 +196,7 @@ def test_strong_simulation() -> None:
     threshold = 1e-12
     window_size = 0
 
-    measurements = [Observable("z", site) for site in range(num_qubits)]
+    measurements = [Observable(Z(), site) for site in range(num_qubits)]
     sim_params = StrongSimParams(measurements, num_traj, max_bond_dim, threshold, window_size)
     # Use a noise model that is not None so that sim_params.num_traj remains unchanged.
     gamma = 1e-3
@@ -230,9 +231,9 @@ def test_strong_simulation_no_noise() -> None:
     circ.measure_all()
 
     state = MPS(length=num_qubits)
-    measurements = [Observable("x", num_qubits // 2)]
+    measurements = [Observable(X(), num_qubits // 2)]
     sim_params = StrongSimParams(
-        measurements, num_traj=1, max_bond_dim=16, threshold=1e-6, window_size=0, get_state=True
+        measurements, num_traj=1, max_bond_dim=16, threshold=1e-12, window_size=0, get_state=True
     )
     simulator.run(state, circ, sim_params, noise_model=None)
     assert sim_params.output_state is not None
@@ -263,7 +264,7 @@ def test_strong_simulation_parallel_off() -> None:
     threshold = 1e-12
     window_size = 0
 
-    measurements = [Observable("z", site) for site in range(num_qubits)]
+    measurements = [Observable(Z(), site) for site in range(num_qubits)]
     sim_params = StrongSimParams(measurements, num_traj, max_bond_dim, threshold, window_size)
     # Use a noise model that is not None so that sim_params.num_traj remains unchanged.
     gamma = 1e-3
@@ -304,7 +305,7 @@ def test_weak_simulation_noise() -> None:
     circuit.measure_all()
     shots = 1024
     max_bond_dim = 4
-    threshold = 1e-6
+    threshold = 1e-12
     window_size = 0
     sim_params = WeakSimParams(shots, max_bond_dim, threshold, window_size)
 
@@ -334,7 +335,7 @@ def test_weak_simulation_no_noise() -> None:
     circuit.measure_all()
     shots = 1024
     max_bond_dim = 4
-    threshold = 1e-6
+    threshold = 1e-12
     window_size = 0
     sim_params = WeakSimParams(shots, max_bond_dim, threshold, window_size)
 
@@ -366,7 +367,7 @@ def test_weak_simulation_get_state() -> None:
     circuit.measure_all()
     shots = 1
     max_bond_dim = 4
-    threshold = 1e-6
+    threshold = 1e-12
     window_size = 0
     sim_params = WeakSimParams(shots, max_bond_dim, threshold, window_size, get_state=True)
 
@@ -395,7 +396,7 @@ def test_weak_simulation_get_state_noise() -> None:
     circuit.measure_all()
     shots = 1024
     max_bond_dim = 4
-    threshold = 1e-6
+    threshold = 1e-12
     window_size = 0
     sim_params = WeakSimParams(shots, max_bond_dim, threshold, window_size, get_state=True)
 
