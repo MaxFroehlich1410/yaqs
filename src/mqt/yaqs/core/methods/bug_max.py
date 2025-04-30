@@ -170,14 +170,14 @@ def local_update(
     state.tensors[site] = new_q
 
 
-    # check if new_q is orthogonal
-    a = np.conj(new_q)
-    mat = oe.contract("ijk, ilk->jl", new_q,a)
-    epsilon = 1e-10
-    mat[epsilon > mat] = 0
-    test_identity = np.eye(mat.shape[0], dtype=complex)
-    if np.allclose(mat, test_identity):
-        print('new_q orthogonal')
+    # # check if new_q is orthogonal
+    # a = np.conj(new_q)
+    # mat = oe.contract("ijk, ilk->jl", new_q,a)
+    # epsilon = 1e-10
+    # mat[epsilon > mat] = 0
+    # test_identity = np.eye(mat.shape[0], dtype=complex)
+    # if np.allclose(mat, test_identity):
+    #     print('new_q orthogonal')
 
 
     canon_center_tensors[site - 1] = np.tensordot(canon_center_tensors[site - 1], basis_change_m, axes=(2, 0))
@@ -185,7 +185,7 @@ def local_update(
     return basis_change_m, new_right_block
 
 
-def bug(
+def bug_max(
     state: MPS, mpo: MPO, sim_params: PhysicsSimParams | WeakSimParams | StrongSimParams, numiter_lanczos: int = 25
 ) -> None:
     """Performs the Basis-Update and Galerkin Method for an MPS.
@@ -213,24 +213,62 @@ def bug(
         sim_params.dt = 1
 
     
+    print('ortho center before canon_tensors:', state.check_canonical_form())
     canon_center_tensors, left_envs = prepare_canonical_site_tensors(state, mpo)
+    print('ortho center after canon_tensors:', state.check_canonical_form())
     right_end_dimension = state.tensors[-1].shape[2]
     right_block = np.eye(right_end_dimension).reshape(right_end_dimension, 1, right_end_dimension)
     right_m_block = np.eye(right_end_dimension)
     # Sweep from right to left.
     for site in range(num_sites - 1, 0, -1):
+        print(f'EVOLVE SITE {site}')
         # print('site', site)
         # print('ortho center:', state.check_canonical_form()
-        print('site', site)
-        print('ortho center before update:', state.check_canonical_form())
+        # print('site', site)
+        # print('ortho center before update:', state.check_canonical_form())
+        for i in range(num_sites):
+            a = np.conj(state.tensors[i])
+            mat = oe.contract("ijk, ijl->kl", a, state.tensors[i])
+            epsilon = 1e-10
+            mat[epsilon > mat] = 0
+            test_identity = np.eye(mat.shape[0], dtype=complex)
+            if np.allclose(mat, test_identity):
+                print(f'site tensor {i} is left canonical')
+        print('ortho center:', state.check_canonical_form())
+        for i in range(num_sites):
+            a = np.conj(state.tensors[i])
+            mat = oe.contract("ijk, ilk->jl", state.tensors[i],a)
+            epsilon = 1e-10
+            mat[epsilon > mat] = 0
+            test_identity = np.eye(mat.shape[0], dtype=complex)
+            if np.allclose(mat, test_identity):
+                print(f'site tensor {i} is right canonical')
         right_m_block, right_block = local_update(
             state, mpo, left_envs, right_block, canon_center_tensors, site, right_m_block, sim_params, numiter_lanczos
         )
-        print('shape before:',state.tensors[site].shape)
-        print('site', site)
-        print('ortho center after update:', state.check_canonical_form())
-        state.shift_orthogonality_center_left(site)
-        print('shape after:',state.tensors[site].shape)
+        
+        # print('site', site)
+        # print('ortho center after update:', state.check_canonical_form())
+        # state.shift_orthogonality_center_left(site)
+        print('after evolve site:')
+        for i in range(num_sites):
+            a = np.conj(state.tensors[i])
+            mat = oe.contract("ijk, ijl->kl", a, state.tensors[i])
+            epsilon = 1e-10
+            mat[epsilon > mat] = 0
+            test_identity = np.eye(mat.shape[0], dtype=complex)
+            if np.allclose(mat, test_identity):
+                print(f'site tensor {i} is left canonical')
+        print('ortho center:', state.check_canonical_form())
+        for i in range(num_sites):
+            a = np.conj(state.tensors[i])
+            mat = oe.contract("ijk, ilk->jl", state.tensors[i],a)
+            epsilon = 1e-10
+            mat[epsilon > mat] = 0
+            test_identity = np.eye(mat.shape[0], dtype=complex)
+            if np.allclose(mat, test_identity):
+                print(f'site tensor {i} is right canonical')
+
         
     # Update the first site.
     updated_tensor = update_site(
