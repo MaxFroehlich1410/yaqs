@@ -392,6 +392,7 @@ def single_site_tdvp(
     Raises:
         ValueError: If Hamiltonian is invalid length.
     """
+    print("START 1TDVP")
     num_sites = hamiltonian.length
     if num_sites != state.length:
         msg = "The state and Hamiltonian must have the same number of sites."
@@ -412,7 +413,9 @@ def single_site_tdvp(
         sim_params.dt = 2
 
     # Left-to-right sweep: Update sites 0 to L-2.
+    print("start left to right sweep 1TDVP")
     for i in range(num_sites - 1):
+
         state.tensors[i] = update_site(
             left_blocks[i],
             right_blocks[i],
@@ -421,6 +424,7 @@ def single_site_tdvp(
             0.5 * sim_params.dt,
             numiter_lanczos,
         )
+        print('forward evolve site', i)
         tensor_shape = state.tensors[i].shape
         reshaped_tensor = state.tensors[i].reshape((tensor_shape[0] * tensor_shape[1], tensor_shape[2]))
         site_tensor, bond_tensor = np.linalg.qr(reshaped_tensor)
@@ -428,9 +432,11 @@ def single_site_tdvp(
         left_blocks[i + 1] = update_left_environment(
             state.tensors[i], state.tensors[i], hamiltonian.tensors[i], left_blocks[i]
         )
+        print('update left block', i + 1)
         bond_tensor = update_bond(
             left_blocks[i + 1], right_blocks[i], bond_tensor, -0.5 * sim_params.dt, numiter_lanczos
         )
+        print('backward evolve bond and contract into site', i + 1)
         state.tensors[i + 1] = oe.contract(state.tensors[i + 1], (0, 3, 2), bond_tensor, (1, 3), (0, 1, 2))
 
     if isinstance(sim_params, (WeakSimParams, StrongSimParams)):
@@ -445,11 +451,13 @@ def single_site_tdvp(
         sim_params.dt,
         numiter_lanczos,
     )
+    print('forward evolve site', last, 'by full timestep')
 
     if isinstance(sim_params, (WeakSimParams, StrongSimParams)):
         return
 
     # Right-to-left sweep: Update sites 1 to L-1.
+    print("start right to left sweep 1TDVP")
     for i in reversed(range(1, num_sites)):
         state.tensors[i] = state.tensors[i].transpose((0, 2, 1))
         tensor_shape = state.tensors[i].shape
@@ -463,10 +471,12 @@ def single_site_tdvp(
         right_blocks[i - 1] = update_right_environment(
             state.tensors[i], state.tensors[i], hamiltonian.tensors[i], right_blocks[i]
         )
+        print('update right block', i - 1)
         bond_tensor = bond_tensor.transpose()
         bond_tensor = update_bond(
             left_blocks[i], right_blocks[i - 1], bond_tensor, -0.5 * sim_params.dt, numiter_lanczos
         )
+        print('backward evolve bond and contract into site', i - 1)
         state.tensors[i - 1] = oe.contract(state.tensors[i - 1], (0, 1, 3), bond_tensor, (3, 2), (0, 1, 2))
         state.tensors[i - 1] = update_site(
             left_blocks[i - 1],
@@ -476,6 +486,7 @@ def single_site_tdvp(
             0.5 * sim_params.dt,
             numiter_lanczos,
         )
+        print('forward evolve site', i - 1)
 
 
 def two_site_tdvp(
@@ -505,6 +516,7 @@ def two_site_tdvp(
     Raises:
         ValueError: If Hamiltonian is invalid length.
     """
+    print("START 2TDVP")
     num_sites = hamiltonian.length
     if num_sites != state.length:
         msg = "State and Hamiltonian must have the same number of sites"
@@ -529,16 +541,20 @@ def two_site_tdvp(
         sim_params.dt = 2
 
     # Left-to-right sweep for sites 0 to L-2.
+    print("start left to right sweep 2TDVP")
     for i in range(num_sites - 2):
         merged_tensor = merge_mps_tensors(state.tensors[i], state.tensors[i + 1])
         merged_mpo = merge_mpo_tensors(hamiltonian.tensors[i], hamiltonian.tensors[i + 1])
+        print('forward evolve site', i, 'and', i + 1)
         merged_tensor = update_site(
             left_blocks[i], right_blocks[i + 1], merged_mpo, merged_tensor, 0.5 * sim_params.dt, numiter_lanczos
         )
         state.tensors[i], state.tensors[i + 1] = split_mps_tensor(merged_tensor, "right", sim_params, dynamic=dynamic)
+        print('update left block', i + 1)
         left_blocks[i + 1] = update_left_environment(
             state.tensors[i], state.tensors[i], hamiltonian.tensors[i], left_blocks[i]
         )
+        print('backward evolve site', i + 1)
         state.tensors[i + 1] = update_site(
             left_blocks[i + 1],
             right_blocks[i + 1],
@@ -555,6 +571,7 @@ def two_site_tdvp(
     i = num_sites - 2
     merged_tensor = merge_mps_tensors(state.tensors[i], state.tensors[i + 1])
     merged_mpo = merge_mpo_tensors(hamiltonian.tensors[i], hamiltonian.tensors[i + 1])
+    print('forward evolve site', i, 'and', i + 1, 'by full timestep')
     merged_tensor = update_site(
         left_blocks[i], right_blocks[i + 1], merged_mpo, merged_tensor, sim_params.dt, numiter_lanczos
     )
@@ -564,12 +581,15 @@ def two_site_tdvp(
         return
 
     state.tensors[i], state.tensors[i + 1] = split_mps_tensor(merged_tensor, "left", sim_params, dynamic=dynamic)
+    print('update right block', i)
     right_blocks[i] = update_right_environment(
         state.tensors[i + 1], state.tensors[i + 1], hamiltonian.tensors[i + 1], right_blocks[i + 1]
     )
 
     # Right-to-left sweep.
+    print("start right to left sweep 2TDVP")
     for i in reversed(range(num_sites - 2)):
+        print('cackward evolve site', i + 1)
         state.tensors[i + 1] = update_site(
             left_blocks[i + 1],
             right_blocks[i + 1],
@@ -580,10 +600,12 @@ def two_site_tdvp(
         )
         merged_tensor = merge_mps_tensors(state.tensors[i], state.tensors[i + 1])
         merged_mpo = merge_mpo_tensors(hamiltonian.tensors[i], hamiltonian.tensors[i + 1])
+        print('forward evolve site', i, 'and', i + 1)
         merged_tensor = update_site(
             left_blocks[i], right_blocks[i + 1], merged_mpo, merged_tensor, 0.5 * sim_params.dt, numiter_lanczos
         )
         state.tensors[i], state.tensors[i + 1] = split_mps_tensor(merged_tensor, "left", sim_params, dynamic=dynamic)
+        print('update right block', i)
         right_blocks[i] = update_right_environment(
             state.tensors[i + 1], state.tensors[i + 1], hamiltonian.tensors[i + 1], right_blocks[i + 1]
         )
@@ -617,6 +639,8 @@ def local_dynamic_tdvp(
     Raises:
         ValueError: If Hamiltonian is invalid length.
     """
+    print("START LOCAL DYNAMIC TDVP")
+    last_used_tdvp = None
 
     num_sites = hamiltonian.length
     if num_sites != state.length:
@@ -673,6 +697,7 @@ def local_dynamic_tdvp(
                 state.tensors[i], state.tensors[i], hamiltonian.tensors[i], left_blocks[i]
                 )
                 i += 2
+                last_used_tdvp = '2TDVP'
 
             else: 
                 merged_tensor = merge_mps_tensors(state.tensors[i], state.tensors[i + 1])
@@ -696,6 +721,7 @@ def local_dynamic_tdvp(
                     numiter_lanczos,
                 )
                 i += 1
+                last_used_tdvp = '2TDVP'
 
         # perform 1TDVP if bond dimension is equal to max_bond_dim
         else:   
@@ -712,6 +738,7 @@ def local_dynamic_tdvp(
                         numiter_lanczos,
                     )
                     i +=1
+                    last_used_tdvp = '1TDVP'
                     if isinstance(sim_params, (WeakSimParams, StrongSimParams)):
                         return
             else: 
@@ -732,11 +759,13 @@ def local_dynamic_tdvp(
                 left_blocks[i + 1] = update_left_environment(
                     state.tensors[i], state.tensors[i], hamiltonian.tensors[i], left_blocks[i]
                 )
+                print(f'backward evolution bond and contract into site tensor {i+1}')
                 bond_tensor = update_bond(
                     left_blocks[i + 1], right_blocks[i], bond_tensor, -0.5 * sim_params.dt, numiter_lanczos
                 )
                 state.tensors[i + 1] = oe.contract(state.tensors[i + 1], (0, 3, 2), bond_tensor, (1, 3), (0, 1, 2))
                 i += 1
+                last_used_tdvp = '1TDVP'
     # Right-to-left sweep.
     print("start right to left sweep")
 
@@ -753,12 +782,13 @@ def local_dynamic_tdvp(
 
         state.tensors[i], state.tensors[i + 1] = split_mps_tensor(merged_tensor, "left", sim_params, dynamic=dynamic)
         print(f'update right environment, block {i}')
-        right_blocks[i-1] = update_right_environment(
-            state.tensors[i], state.tensors[i], hamiltonian.tensors[i], right_blocks[i]
+        right_blocks[i] = update_right_environment(
+            state.tensors[i + 1], state.tensors[i + 1], hamiltonian.tensors[i + 1], right_blocks[i + 1]
         )
-        # left_blocks[i + 1] = update_left_environment(
-        # state.tensors[i], state.tensors[i], hamiltonian.tensors[i], left_blocks[i]
-        # )
+        left_blocks[i + 1] = update_left_environment(
+        state.tensors[i], state.tensors[i], hamiltonian.tensors[i], left_blocks[i]
+        )
+        last_used_tdvp = '2TDVP'
 
     # perform 1TDVP on last site if bond dimension is equal to max_bond_dim
     else: 
@@ -773,6 +803,7 @@ def local_dynamic_tdvp(
             0.5 * sim_params.dt,
             numiter_lanczos,
         )
+        last_used_tdvp = '1TDVP'
 
 
     i = num_sites - 2
@@ -781,15 +812,38 @@ def local_dynamic_tdvp(
         # perform 2TDVP if bond dimension is smaller than max_bond_dim
         if state.tensors[i].shape[1] < sim_params.max_bond_dim:
             print("2TDVP")
-            print(f'backward evolution site tensor {i}')
-            state.tensors[i] = update_site(
-                        left_blocks[i],
-                        right_blocks[i],
-                        hamiltonian.tensors[i],
-                        state.tensors[i],
-                        -0.5 * sim_params.dt,
-                        numiter_lanczos,
-                    )
+
+            if last_used_tdvp == '1TDVP':
+                state.tensors[i+1] = state.tensors[i+1].transpose((0, 2, 1))
+                tensor_shape = state.tensors[i+1].shape
+                reshaped_tensor = state.tensors[i+1].reshape((tensor_shape[0] * tensor_shape[1], tensor_shape[2]))
+                site_tensor, bond_tensor = np.linalg.qr(reshaped_tensor)
+                state.tensors[i+1] = site_tensor.reshape((tensor_shape[0], tensor_shape[1], site_tensor.shape[1])).transpose((
+                    0,
+                    2,
+                    1,
+                ))
+                print(f'update right environment, block {i}')
+                right_blocks[i] = update_right_environment(
+                    state.tensors[i+1], state.tensors[i+1], hamiltonian.tensors[i+1], right_blocks[i+1]
+                )
+                bond_tensor = bond_tensor.transpose()
+                print(f'backward evolution bond and contract into site tensor {i}') 
+                bond_tensor = update_bond(
+                    left_blocks[i+1], right_blocks[i], bond_tensor, -0.5 * sim_params.dt, numiter_lanczos
+                )
+                state.tensors[i] = oe.contract(state.tensors[i], (0, 1, 3), bond_tensor, (3, 2), (0, 1, 2))
+
+            else: 
+                print(f'backward evolution site tensor {i}')
+                state.tensors[i] = update_site(
+                            left_blocks[i],
+                            right_blocks[i],
+                            hamiltonian.tensors[i],
+                            state.tensors[i],
+                            -0.5 * sim_params.dt,
+                            numiter_lanczos,
+                        )
             merged_tensor = merge_mps_tensors(state.tensors[i - 1], state.tensors[i])
             merged_mpo = merge_mpo_tensors(hamiltonian.tensors[i - 1], hamiltonian.tensors[i])
             print(f'forward evolution site tensors {i-1} and {i}')
@@ -797,11 +851,12 @@ def local_dynamic_tdvp(
                 left_blocks[i - 1], right_blocks[i], merged_mpo, merged_tensor, 0.5 * sim_params.dt, numiter_lanczos
             )
             state.tensors[i - 1], state.tensors[i] = split_mps_tensor(merged_tensor, "left", sim_params, dynamic=dynamic)
-            print(f'update right environment, block {i}')
+            print(f'update right environment, block {i - 1}')
             right_blocks[i - 1] = update_right_environment(
                 state.tensors[i], state.tensors[i], hamiltonian.tensors[i], right_blocks[i]
             )
             i -= 1
+            last_used_tdvp = '2TDVP'
 
         # perform 1TDVP if bond dimension is equal to max_bond_dim    
         else:
@@ -810,7 +865,6 @@ def local_dynamic_tdvp(
             tensor_shape = state.tensors[i+1].shape
             reshaped_tensor = state.tensors[i+1].reshape((tensor_shape[0] * tensor_shape[1], tensor_shape[2]))
             site_tensor, bond_tensor = np.linalg.qr(reshaped_tensor)
-            print(f'Q shape: {site_tensor.shape}, R shape: {bond_tensor.shape}')
             state.tensors[i+1] = site_tensor.reshape((tensor_shape[0], tensor_shape[1], site_tensor.shape[1])).transpose((
                 0,
                 2,
@@ -821,6 +875,7 @@ def local_dynamic_tdvp(
                 state.tensors[i+1], state.tensors[i+1], hamiltonian.tensors[i+1], right_blocks[i+1]
             )
             bond_tensor = bond_tensor.transpose()
+            print(f'backward evolution bond and contract into site tensor {i}') 
             bond_tensor = update_bond(
                 left_blocks[i+1], right_blocks[i], bond_tensor, -0.5 * sim_params.dt, numiter_lanczos
             )
@@ -835,5 +890,6 @@ def local_dynamic_tdvp(
                 numiter_lanczos,
             )
             i -= 1
+            last_used_tdvp = '1TDVP'
 
 
