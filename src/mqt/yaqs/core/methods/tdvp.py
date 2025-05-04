@@ -369,6 +369,110 @@ def update_bond(
     )
     return evolved_bond_tensor_flat.reshape(bond_tensor.shape)
 
+def one_step_left_to_right_1tdvp(
+        state: MPS,
+        hamiltonian: MPO,
+        sim_params: PhysicsSimParams | StrongSimParams | WeakSimParams,
+        numiter_lanczos: int = 25,
+        right_blocks: NDArray[np.complex128] = None,
+        left_blocks: NDArray[np.complex128] = None,
+        site: int = 0,
+    ) -> None:
+        """Perform one left-to-right half-step of the single-site TDVP sweep at a given site.
+
+        This helper carries out the “first half” of the symmetric one-site TDVP update on the MPS tensor
+        at index `site`:
+        1. Evolve the local tensor at site i forward by 0.5*dt under the effective local Hamiltonian.
+        2. Perform a QR decomposition of that updated tensor, splitting it into a new site tensor Q
+            and a bond matrix R.
+        3. Update the left environment block for the next site using Q.
+        4. Evolve the bond matrix R backward by 0.5*dt, and absorb it into the neighbor tensor at site i+1.
+
+        Args:
+            state (MPS):
+                The current MPS being evolved.
+            hamiltonian (MPO):
+                The MPO representation of the Hamiltonian.
+            sim_params (PhysicsSimParams | StrongSimParams | WeakSimParams):
+                Simulation parameters, providing `dt`.
+            numiter_lanczos (int, optional):
+                Number of Lanczos iterations to use for the matrix exponential. Defaults to 25.
+            right_env (ndarray, optional):
+                The right-environment block for site `site`. Must have shape consistent with
+                `state.tensors[site]`. If None, it should be provided by the caller.
+            left_env (ndarray, optional):
+                The left-environment block for site `site`. Must have shape consistent with
+                `state.tensors[site]`. If None, it should be provided by the caller.
+            site (int, optional):
+                Index of the site to update in this half-step (0 ≤ site < state.length). Defaults to 0.
+
+        Raises:
+            ValueError:
+                If `site` is out of bounds, or if the shapes of the provided environment blocks
+                do not match the MPS tensor dimensions.
+        """
+        # update the site tensor i
+        print(f'forward evolve site {site}')
+        state.tensors[site] = update_site(
+        left_blocks[site],
+        right_blocks[site],
+        hamiltonian.tensors[site],
+        state.tensors[site],
+        0.5 * sim_params.dt,
+        numiter_lanczos,
+        )
+        # QR decomposition of evolved tensor
+        tensor_shape = state.tensors[site].shape
+        reshaped_tensor = state.tensors[site].reshape((tensor_shape[0] * tensor_shape[1], tensor_shape[2]))
+        site_tensor, bond_tensor = np.linalg.qr(reshaped_tensor)
+        state.tensors[site] = site_tensor.reshape((tensor_shape[0], tensor_shape[1], site_tensor.shape[1]))
+        print(f'update left environment, block {site+1}')
+
+        # update the left environment block for the next site
+        left_blocks[site + 1] = update_left_environment(
+            state.tensors[site], state.tensors[site], hamiltonian.tensors[site], left_blocks[site]
+        )
+        print(f'backward evolution bond and contract into site tensor {site+1}')
+
+        # evolve the bond tensor backward by 0.5*dt and contract it into the next site tensor
+        bond_tensor = update_bond(
+            left_blocks[site + 1], right_blocks[site], bond_tensor, -0.5 * sim_params.dt, numiter_lanczos
+        )
+        state.tensors[site + 1] = oe.contract(state.tensors[site + 1], (0, 3, 2), bond_tensor, (1, 3), (0, 1, 2))
+
+def one_step_left_to_right_2tdvp(
+        state: MPS,
+        hamiltonian: MPO,
+        sim_params: PhysicsSimParams | StrongSimParams | WeakSimParams,
+        numiter_lanczos: int = 25,
+        right_blocks: NDArray[np.complex128] = None,
+        left_blocks: NDArray[np.complex128] = None,
+        site: int = 0,
+) -> None:
+        merged_tensor = merge_mps_tensors(state.tensors[site], state.tensors[site + 1])
+        merged_mpo = merge_mpo_tensors(hamiltonian.tensors[site], hamiltonian.tensors[site + 1])
+        print(f'forward evolution site tensors {site} and {site+1}')
+        merged_tensor = update_site(
+            left_blocks[site], right_blocks[site + 1], merged_mpo, merged_tensor, 0.5 * sim_params.dt, numiter_lanczos
+        )
+        state.tensors[site], state.tensors[site + 1] = split_mps_tensor(merged_tensor, "right", sim_params, dynamic=False)
+        print(f'update left environment, block {site+1}')
+        left_blocks[site + 1] = update_left_environment(
+            state.tensors[site], state.tensors[site], hamiltonian.tensors[site], left_blocks[site]
+        )
+        print(f'backward evolution site tensor {site+1}')
+        state.tensors[site + 1] = update_site(
+            left_blocks[site + 1],
+            right_blocks[site + 1],
+            hamiltonian.tensors[site + 1],
+            state.tensors[site + 1],
+            -0.5 * sim_params.dt,
+            numiter_lanczos,
+        )
+
+
+
+
 
 def single_site_tdvp(
     state: MPS,
@@ -700,26 +804,35 @@ def local_dynamic_tdvp(
                 last_used_tdvp = '2TDVP'
 
             else: 
-                merged_tensor = merge_mps_tensors(state.tensors[i], state.tensors[i + 1])
-                merged_mpo = merge_mpo_tensors(hamiltonian.tensors[i], hamiltonian.tensors[i + 1])
-                print(f'forward evolution site tensors {i} and {i+1}')
-                merged_tensor = update_site(
-                    left_blocks[i], right_blocks[i + 1], merged_mpo, merged_tensor, 0.5 * sim_params.dt, numiter_lanczos
-                )
-                state.tensors[i], state.tensors[i + 1] = split_mps_tensor(merged_tensor, "right", sim_params, dynamic=dynamic)
-                print(f'update left environment, block {i+1}')
-                left_blocks[i + 1] = update_left_environment(
-                    state.tensors[i], state.tensors[i], hamiltonian.tensors[i], left_blocks[i]
-                )
-                print(f'backward evolution site tensor {i+1}')
-                state.tensors[i + 1] = update_site(
-                    left_blocks[i + 1],
-                    right_blocks[i + 1],
-                    hamiltonian.tensors[i + 1],
-                    state.tensors[i + 1],
-                    -0.5 * sim_params.dt,
-                    numiter_lanczos,
-                )
+                # merged_tensor = merge_mps_tensors(state.tensors[i], state.tensors[i + 1])
+                # merged_mpo = merge_mpo_tensors(hamiltonian.tensors[i], hamiltonian.tensors[i + 1])
+                # print(f'forward evolution site tensors {i} and {i+1}')
+                # merged_tensor = update_site(
+                #     left_blocks[i], right_blocks[i + 1], merged_mpo, merged_tensor, 0.5 * sim_params.dt, numiter_lanczos
+                # )
+                # state.tensors[i], state.tensors[i + 1] = split_mps_tensor(merged_tensor, "right", sim_params, dynamic=dynamic)
+                # print(f'update left environment, block {i+1}')
+                # left_blocks[i + 1] = update_left_environment(
+                #     state.tensors[i], state.tensors[i], hamiltonian.tensors[i], left_blocks[i]
+                # )
+                # print(f'backward evolution site tensor {i+1}')
+                # state.tensors[i + 1] = update_site(
+                #     left_blocks[i + 1],
+                #     right_blocks[i + 1],
+                #     hamiltonian.tensors[i + 1],
+                #     state.tensors[i + 1],
+                #     -0.5 * sim_params.dt,
+                #     numiter_lanczos,
+                # )
+                one_step_left_to_right_2tdvp(
+                        state,
+                        hamiltonian,
+                        sim_params,
+                        numiter_lanczos,
+                        right_blocks,
+                        left_blocks,
+                        i,
+                        )
                 i += 1
                 last_used_tdvp = '2TDVP'
 
@@ -742,28 +855,15 @@ def local_dynamic_tdvp(
                     if isinstance(sim_params, (WeakSimParams, StrongSimParams)):
                         return
             else: 
-                print('forward evolution site tensor', i)
-                state.tensors[i] = update_site(
-                    left_blocks[i],
-                    right_blocks[i],
-                    hamiltonian.tensors[i],
-                    state.tensors[i],
-                    0.5 * sim_params.dt,
-                    numiter_lanczos,
-                )
-                tensor_shape = state.tensors[i].shape
-                reshaped_tensor = state.tensors[i].reshape((tensor_shape[0] * tensor_shape[1], tensor_shape[2]))
-                site_tensor, bond_tensor = np.linalg.qr(reshaped_tensor)
-                state.tensors[i] = site_tensor.reshape((tensor_shape[0], tensor_shape[1], site_tensor.shape[1]))
-                print(f'update left environment, block {i+1}')
-                left_blocks[i + 1] = update_left_environment(
-                    state.tensors[i], state.tensors[i], hamiltonian.tensors[i], left_blocks[i]
-                )
-                print(f'backward evolution bond and contract into site tensor {i+1}')
-                bond_tensor = update_bond(
-                    left_blocks[i + 1], right_blocks[i], bond_tensor, -0.5 * sim_params.dt, numiter_lanczos
-                )
-                state.tensors[i + 1] = oe.contract(state.tensors[i + 1], (0, 3, 2), bond_tensor, (1, 3), (0, 1, 2))
+                one_step_left_to_right_1tdvp(
+                state,
+                hamiltonian,
+                sim_params,
+                numiter_lanczos,
+                right_blocks,
+                left_blocks,
+                i,
+            )
                 i += 1
                 last_used_tdvp = '1TDVP'
     # Right-to-left sweep.
