@@ -804,26 +804,6 @@ def local_dynamic_tdvp(
                 last_used_tdvp = '2TDVP'
 
             else: 
-                # merged_tensor = merge_mps_tensors(state.tensors[i], state.tensors[i + 1])
-                # merged_mpo = merge_mpo_tensors(hamiltonian.tensors[i], hamiltonian.tensors[i + 1])
-                # print(f'forward evolution site tensors {i} and {i+1}')
-                # merged_tensor = update_site(
-                #     left_blocks[i], right_blocks[i + 1], merged_mpo, merged_tensor, 0.5 * sim_params.dt, numiter_lanczos
-                # )
-                # state.tensors[i], state.tensors[i + 1] = split_mps_tensor(merged_tensor, "right", sim_params, dynamic=dynamic)
-                # print(f'update left environment, block {i+1}')
-                # left_blocks[i + 1] = update_left_environment(
-                #     state.tensors[i], state.tensors[i], hamiltonian.tensors[i], left_blocks[i]
-                # )
-                # print(f'backward evolution site tensor {i+1}')
-                # state.tensors[i + 1] = update_site(
-                #     left_blocks[i + 1],
-                #     right_blocks[i + 1],
-                #     hamiltonian.tensors[i + 1],
-                #     state.tensors[i + 1],
-                #     -0.5 * sim_params.dt,
-                #     numiter_lanczos,
-                # )
                 one_step_left_to_right_2tdvp(
                         state,
                         hamiltonian,
