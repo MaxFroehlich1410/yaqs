@@ -22,6 +22,7 @@ import copy
 from typing import TYPE_CHECKING
 
 import numpy as np
+import opt_einsum as oe
 import pytest
 from qiskit.circuit import QuantumCircuit
 from scipy.stats import unitary_group
@@ -795,73 +796,119 @@ def test_convert_to_vector_fidelity_long_range() -> None:
     np.testing.assert_allclose(1, np.abs(np.vdot(state_vector, tdvp_state)) ** 2)
 
 
-def test_padded_mps() -> None:
-    """Test that MPS initializes with correct padding.
+@pytest.mark.parametrize(("length", "target"), [(6, 16), (7, 7), (9, 8), (10, 3)])
+def test_pad_shapes_and_centre(length: int, target: int) -> None:
+    """Test that pad_bond_dimension correctly pads the MPS and preserves invariants.
 
-    This test creates an MPS with padded bond dimensions.
+    * the state's norm is unchanged
+    * the orthogonality-centre index is [0]
+    * every virtual leg has the expected size
+      ( powers-of-two "staircase" capped by target_dim )
     """
-    length = 4
-    pdim = 2
-    mps = MPS(length=length, physical_dimensions=[pdim] * length, pad=2)
+    mps = MPS(length=length, state="zeros")  # all bonds = 1
+    norm_before = mps.norm()
 
-    assert mps.length == length
-    assert len(mps.tensors) == length
-    assert all(d == pdim for d in mps.physical_dimensions)
+    mps.pad_bond_dimension(target)
 
-    for i, tensor in enumerate(mps.tensors):
-        if i != 0 and i != mps.length - 1:
-            assert tensor.ndim == 3
-            assert tensor.shape[0] == pdim
-            assert tensor.shape[1] == 2
-            assert tensor.shape[2] == 2
-        elif i == 0:
-            assert tensor.ndim == 3
-            assert tensor.shape[0] == pdim
-            assert tensor.shape[1] == 1
-            assert tensor.shape[2] == 2
-        elif i == mps.length - 1:
-            assert tensor.ndim == 3
-            assert tensor.shape[0] == pdim
-            assert tensor.shape[1] == 2
-            assert tensor.shape[2] == 1
+    # invariants
+    assert np.isclose(mps.norm(), norm_before, atol=1e-12)
+    assert mps.check_canonical_form()[0] == 0
+
+    # expected staircase
+    for i, T in enumerate(mps.tensors):
+        _, chi_l, chi_r = T.shape
+
+        # left (bond i - 1)
+        if i == 0:
+            left_expected = 1
+        else:
+            exp_left = min(i, length - i)
+            left_expected = min(target, 2**exp_left)
+
+        # right (bond i)
+        if i == length - 1:
+            right_expected = 1
+        else:
+            exp_right = min(i + 1, length - 1 - i)
+            right_expected = min(target, 2**exp_right)
+
+        assert chi_l == left_expected, f"site {i}: left {chi_l} vs {left_expected}"
+        assert chi_r == right_expected, f"site {i}: right {chi_r} vs {right_expected}"
 
 
-def test_padded_mps_error() -> None:
-    """Test that MPS initializes with correct padding.
+def test_pad_raises_on_shrink() -> None:
+    """Test that pad_bond_dimension raises a ValueError when trying to shrink the bond dimension.
 
-    This test creates an MPS with incorrect padding
+    Calling pad_bond_dimension with a *smaller* target than an existing
+    bond must raise a ValueError.
     """
-    length = 4
-    pdim = 2
-    mps = MPS(length=length, physical_dimensions=[pdim] * length, pad=2)
-    with pytest.raises(ValueError, match=r"Target bond dim must be at least as large as the current bond dim."):
-        mps.pad_bond_dimension(1)
+    mps = MPS(length=5, state="zeros")
+    mps.pad_bond_dimension(4)  # enlarge first
+
+    with pytest.raises(ValueError, match="Target bond dim must be at least current bond dim"):
+        mps.pad_bond_dimension(2)  # would shrink - must fail
 
 
-def test_truncate_no_truncation() -> None:
-    """Tests the truncation of an MPS, when no truncation should happen."""
-    shapes = [(2, 1, 4)] + [(2, 4, 4)] * 3 + [(2, 4, 1)]
+@pytest.mark.parametrize("center", [0, 1, 2, 3])
+def test_truncate_preserves_orthogonality_center_and_canonicity(center: int) -> None:
+    """Test that truncation preserves the orthogonality center and canonicity.
+
+    This test checks that after truncation, the orthogonality center remains unchanged.
+    """
+    # build a simple MPS of length 4
+    shapes = [(2, 1, 4)] + [(2, 4, 4)] * 2 + [(2, 4, 1)]
     mps = random_mps(shapes)
-    mps.set_canonical_form(0)
-    ref_mps = copy.deepcopy(mps)
-    # Perform truncation
-    mps.truncate(threshold=1e-16, max_bond_dim=10)
-    # Check that the MPS is unchanged
-    mps.check_if_valid_mps()
-    vector = mps.to_vec()
-    ref_vector = ref_mps.to_vec()
-    assert np.allclose(vector, ref_vector)
+    # set an arbitrary initial center
+    mps.set_canonical_form(center)
+    # record the full state-vector for fidelity check
+    before_vec = mps.to_vec()
+    # record the center and canonical-split
+    before_center = mps.check_canonical_form()[0]
+    assert before_center == center
+
+    # do a "no-real" truncation (tiny threshold, generous max bond)
+    mps.truncate(threshold=1e-16, max_bond_dim=100)
+    after_center = mps.check_canonical_form()[0]
+    assert after_center == before_center
+
+    # fidelity of state stays unity
+    after_vec = mps.to_vec()
+    overlap = np.abs(np.vdot(before_vec, after_vec)) ** 2
+    assert np.isclose(overlap, 1.0, atol=1e-12)
+
+    # also check left/right canonicity around that center
+    L = mps.length
+    for i in range(before_center):
+        # left-canonical test
+        A = mps.tensors[i]
+        conjA = np.conj(A)
+        gram = oe.contract("ijk, ijl->kl", conjA, A)
+        # identity on the i-th right bond
+        assert np.allclose(gram, np.eye(gram.shape[0]), atol=1e-12)
+    for i in range(before_center + 1, L):
+        # right-canonical test
+        A = mps.tensors[i]
+        conjA = np.conj(A)
+        gram = oe.contract("ijk, ilk->jl", A, conjA)
+        assert np.allclose(gram, np.eye(gram.shape[0]), atol=1e-12)
 
 
-def test_truncate_truncation() -> None:
-    """Tests the truncation of an MPS, when truncation should happen."""
-    shapes = [(2, 1, 4)] + [(2, 4, 4)] * 3 + [(2, 4, 1)]
+def test_truncate_reduces_bond_dimensions_and_truncates() -> None:
+    """Test that truncation reduces bond dimensions and truncates the MPS.
+
+    This test creates an MPS with large bond dimensions and then truncates it to a smaller size.
+    """
+    # build an MPS with initially large bonds
+    shapes = [(2, 1, 8)] + [(2, 8, 8)] * 3 + [(2, 8, 1)]
     mps = random_mps(shapes)
-    mps.set_canonical_form(0)
-    # Perform truncation
-    mps.truncate(threshold=0.1, max_bond_dim=3)
-    # Check that the MPS is truncated
+    # put it into a known canonical form
+    mps.set_canonical_form(2)
+    # perform a truncation that will cut back to max_bond=3
+    mps.truncate(threshold=0.0, max_bond_dim=3)
+
+    # check validity and that every bond dim <= 3
     mps.check_if_valid_mps()
-    for tensor in mps.tensors:
-        assert tensor.shape[1] <= 3
-        assert tensor.shape[2] <= 3
+    for T in mps.tensors:
+        _, bond_left, bond_right = T.shape
+        assert bond_left <= 3
+        assert bond_right <= 3
