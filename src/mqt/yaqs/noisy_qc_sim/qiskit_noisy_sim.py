@@ -8,7 +8,7 @@ from qiskit_aer.backends.aer_simulator import AerSimulator
 from qiskit_aer import Aer
 import numpy as np
 
-def qiskit_noisy_simulator(circuit, noise_model, num_qubits, num_layers):
+def qiskit_noisy_simulator_stepwise(circuit, noise_model, num_qubits):
     """
     Helper function to get Z expectations using Qiskit's Aer simulator.
     """
@@ -19,25 +19,34 @@ def qiskit_noisy_simulator(circuit, noise_model, num_qubits, num_layers):
         observables.append(observable)
 
     z_expectations = []
+    qc_copy = circuit.copy()
+
+    print('circut:')
+    print(qc_copy.draw())
+    # exact_estimator = Estimator()
+    noisy_estimator = Estimator(options=dict(backend_options=dict(noise_model=noise_model)))
+    pub = (qc_copy, observables)
+    job = noisy_estimator.run([pub])
+    result = job.result()
+    pub_result = result[0] 
+
+    # .data is a DataBin
+    data = pub_result.data
+
+    # The Z expectation values
+    evs = np.array(data.evs).squeeze()  # This is a numpy array of shape (num_qubits,)
+    evs = evs.reshape(-1)
+
+    return evs[::-1]
+
+def qiskit_noisy_simulator(circuit, noise_model, num_qubits, num_layers):
+    z_expectations = []
     for layer in range(num_layers):
         qc_copy = circuit.copy()
-        print(f"Running layer {layer+1} of {num_layers}")
-        for j in range(layer-1):
+        for j in range(layer):
             qc_copy = qc_copy.compose(circuit)
-        # exact_estimator = Estimator()
-        noisy_estimator = Estimator(options=dict(backend_options=dict(noise_model=noise_model)))
-        pub = (qc_copy, observables)
-        job = noisy_estimator.run([pub])
-        result = job.result()
-        pub_result = result[0] 
-
-        # .data is a DataBin
-        data = pub_result.data
-
-        # The Z expectation values
-        z_expectations.append(data.evs)  # This is a numpy array of shape (num_qubits,)
-
-    return z_expectations
+        z_expectations.append(qiskit_noisy_simulator_stepwise(qc_copy, noise_model, num_qubits))
+    return np.array(z_expectations)
 
 
 if __name__ == "__main__":
@@ -47,11 +56,7 @@ if __name__ == "__main__":
     num_qubits = 1
 
     qc = QuantumCircuit(num_qubits)
-    qc.h(0)
-
-
-
-  
+    qc.id(0)
 
 
    
@@ -63,11 +68,11 @@ if __name__ == "__main__":
     # depolarizing_error(depolarizing_prob, 2), ["cx"]
     # )
     noise_model.add_all_qubit_quantum_error(
-    depolarizing_error(depolarizing_prob, 1), ["h"]
+    depolarizing_error(depolarizing_prob, 1), ["i"]
     )
    
 
-    z_vals = qiskit_noisy_simulator(qc, noise_model, num_qubits)
+    z_vals = qiskit_noisy_simulator(qc, noise_model, num_qubits, 3)
     print("Z expectations per layer:\n", z_vals)
 
 

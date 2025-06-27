@@ -177,7 +177,7 @@ def evolve_noisy_circuit(rho0, gate_list, noisemodel, num_layers):
 
         z_expvals.append(z_expectations(rho, n))
 
-    return z_expvals
+    return np.array(z_expvals)
 
 
 

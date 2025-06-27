@@ -19,59 +19,9 @@ from mqt.yaqs.noisy_qc_sim.densitymatrix_sim import (
     z_expectations,
     two_qubit_reverse
 )
-from mqt.yaqs.noisy_qc_sim.qiskit_noisemodels import qiskit_dephasing_noise, qiskit_bitflip_noise
+from mqt.yaqs.noisy_qc_sim.qiskit_noisemodels import qiskit_dephasing_noise, qiskit_bitflip_noise, qiskit_bitflip_noise_2
 from mqt.yaqs.core.data_structures.noise_model import NoiseModel
-
-
-def create_yaqs_dephasing_noise(num_qubits: int, noise_strengths: list) -> NoiseModel:
-    """Create a YAQS noise model with dephasing noise for single qubits and qubit pairs."""
-    single_qubit_strength = noise_strengths[0]
-    pair_qubit_strength = noise_strengths[1] if len(noise_strengths) > 1 else single_qubit_strength
-    
-    processes = []
-    
-    # Single qubit dephasing
-    for qubit in range(num_qubits):
-        processes.append({
-            "name": "dephasing",
-            "sites": [qubit],
-            "strength": single_qubit_strength
-        })
-    
-    # Two qubit ZZ dephasing (equivalent to double_dephasing in NoiseLibrary)
-    for qubit in range(num_qubits - 1):
-        processes.append({
-            "name": "double_dephasing",
-            "sites": [qubit, qubit + 1],
-            "strength": pair_qubit_strength
-        })
-    
-    return NoiseModel(processes)
-
-def create_yaqs_bitflip_noise(num_qubits: int, noise_strengths: list) -> NoiseModel:
-    """Create a YAQS noise model with dephasing noise for single qubits and qubit pairs."""
-    single_qubit_strength = noise_strengths[0]
-    pair_qubit_strength = noise_strengths[1] if len(noise_strengths) > 1 else single_qubit_strength
-    
-    processes = []
-    
-    # Single qubit dephasing
-    for qubit in range(num_qubits):
-        processes.append({
-            "name": "x",
-            "sites": [qubit],
-            "strength": single_qubit_strength
-        })
-    
-    # Two qubit XX bitflip (equivalent to double_dephasing in NoiseLibrary)
-    for qubit in range(num_qubits - 1):
-        processes.append({
-            "name": "xx",
-            "sites": [qubit, qubit + 1],
-            "strength": pair_qubit_strength
-        })
-    
-    return NoiseModel(processes)
+from mqt.yaqs.noisy_qc_sim.yaqs_noisemodels import create_yaqs_bitflip_noise, create_yaqs_bitflip_noise_2, create_yaqs_dephasing_noise
 
 
 def run_noisy_comparison_test(test_name: str, num_qubits: int, circuit_builder, 
@@ -98,7 +48,7 @@ def run_noisy_comparison_test(test_name: str, num_qubits: int, circuit_builder,
     # Run Qiskit simulation with noise
     print("Running Qiskit simulation with noise...")
     qiskit_results = qiskit_noisy_simulator(qc, qiskit_noise_model, num_qubits, num_layers)
-    qiskit_results = np.flip(np.array(qiskit_results))
+    
     
     # Run Kraus channel simulation
     print("Running Kraus channel simulation...")
@@ -107,7 +57,7 @@ def run_noisy_comparison_test(test_name: str, num_qubits: int, circuit_builder,
     gate_list = circuit_to_unitary_list(qc)
     
     kraus_results = evolve_noisy_circuit(rho0, gate_list, yaqs_noise_model, num_layers)
-    kraus_results = np.array(kraus_results)
+
     
     # Compare results
     print(f"\nResults comparison:")
@@ -222,7 +172,7 @@ def test_two_qubit_noise():
         "2-Qubit Identity with Bitflip",
         num_qubits=2,
         circuit_builder=identity_circuit,
-        noise_strengths=[0.2, 0.2],num_layers=3
+        noise_strengths=[0.4, 0.2],num_layers=2
     )
 
 
