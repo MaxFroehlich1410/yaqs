@@ -50,9 +50,10 @@ if __name__ == "__main__":
     rho0_twoqubits = np.array([[1, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]]) 
     gate = np.eye(4)
     kraus_op = pauli_x
+    CNOT = np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0, 1], [0, 0, 1, 0]])
 
-    two_qubit_sim(rho0_twoqubits, 0, gate, kraus_op)
-    two_qubit_sim(rho0_twoqubits, 0.3, gate, kraus_op)
+    two_qubit_sim(rho0_twoqubits, 0, CNOT, kraus_op)
+    two_qubit_sim(rho0_twoqubits, 0.3, CNOT, kraus_op)
 
     # single_qubit_sim(rho0, 0, identity, pauli_x)
     # single_qubit_sim(rho0, 0.3, identity, pauli_x)

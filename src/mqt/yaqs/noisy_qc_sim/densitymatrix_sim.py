@@ -48,32 +48,40 @@ def KrausChannel(rho, noisemodel, sites):
         if len(sites) == 1 and process["sites"] == sites:
             total_strength += process["strength"]
             # single-site channel
+            print(f'strength len sites 1: {process["strength"]}')
             local_K = np.sqrt(process["strength"]) * process["jump_operator"]
             global_K = expand_operator(local_K, sites[0], n_qubits)
+            # print(f'global_K: {global_K}')
             kraus_ops_global.append(global_K)
         elif len(sites) == 2:
-            total_strength += process["strength"]
-            # collect any process that acts exactly on [i], [j], or [i, j]
+            # collect any process that acts exactly on [i], [i+1], or [i, i+1]
             if process["sites"] == [sites[0]] or process["sites"] == [sites[1]]:
+                total_strength += process["strength"]
                 # single-site process, embed on correct site
                 site_idx = process["sites"][0]
+                print(f'strength len sites 2 single operator: {process["strength"]}')
                 local_K = np.sqrt(process["strength"]) * process["jump_operator"]
                 global_K = expand_operator(local_K, site_idx, n_qubits)
+                # print(f'global_K: {global_K}')
                 kraus_ops_global.append(global_K)
             elif process["sites"] == sites:
                 # two-site process, acts on both sites simultaneously
+                total_strength += process["strength"]
+                print(f'strength len sites 2 double operator: {process["strength"]}')
                 local_K = np.sqrt(process["strength"]) * process["jump_operator"]
-                # You may need a different expand_operator for multi-site operators
-                # For example: expand_operator(local_K, sites, n_qubits)
+                print(f'local_K: {local_K}', f'process["strength"]: {process["strength"]}')
                 global_K = expand_operator(local_K, sites, n_qubits)
+                # print(f'global_K: {global_K}')
                 kraus_ops_global.append(global_K)
 
-
+    print(f'total_strength: {total_strength}')
     kraus_ops_global.append(np.sqrt(1-total_strength) * np.eye(rho.shape[0]))
     # Kraus channel application
     result = np.zeros_like(rho, dtype=complex)
+    print(f'length of kraus_ops_global: {len(kraus_ops_global)}')
     for K in kraus_ops_global:
         # print(f"Applying Kraus operator {K} to density matrix {rho}")
+        print(f"Applying Kraus operator {K}")
         result += K @ rho @ K.conj().T
 
     return result
@@ -142,6 +150,7 @@ def evolve_noisy_circuit(rho0, gate_list, noisemodel, num_layers):
     rho = np.copy(rho0)
     z_expvals = []
     print(f"Evolving circuit with {len(gate_list)} gates")
+    
     for layer in range(num_layers):
         for gate in gate_list:
             # Expand gate to full Hilbert space
@@ -169,13 +178,16 @@ def evolve_noisy_circuit(rho0, gate_list, noisemodel, num_layers):
                         i += 1
             else:
                 raise ValueError("Only 1- and 2-qubit gates supported")
+            
             # Apply unitary    
             rho = U @ rho @ U.conj().T
 
             # Apply noise
+            print(f'noisemodel processes: {noisemodel.processes}')
             rho = KrausChannel(rho, noisemodel, gate.sites)
 
         z_expvals.append(z_expectations(rho, n))
+        print('diagonal elements of rho: ', np.diag(rho))
 
     return np.array(z_expvals)
 

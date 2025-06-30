@@ -25,15 +25,14 @@ from mqt.yaqs.noisy_qc_sim.yaqs_noisemodels import create_yaqs_bitflip_noise, cr
 
 
 def run_noisy_comparison_test(test_name: str, num_qubits: int, circuit_builder, 
-                             noise_strengths: list, num_layers: int = 1, tolerance: float = 1e-3):
+                              noise_strengths: list, num_layers: int = 1, tolerance: float = 1e-3):
     """Run a comparison test between Qiskit and Kraus channel simulators."""
     print(f"\n--- Running Noisy Test: {test_name} ({num_qubits} qubits) ---")
     print(f"Noise strengths: {noise_strengths}")
     
-    # Create the base circuit
+    # Create circuit
     qc = QuantumCircuit(num_qubits)
     circuit_builder(qc)
-    
     print("Circuit:")
     print(qc.draw(output='text'))
     
@@ -53,39 +52,39 @@ def run_noisy_comparison_test(test_name: str, num_qubits: int, circuit_builder,
     # Run Kraus channel simulation
     print("Running Kraus channel simulation...")
     rho0 = create_all_zero_density_matrix(num_qubits)
-    print('rho shape', rho0.shape)
+    print(f"rho shape {rho0.shape}")
+    
     gate_list = circuit_to_unitary_list(qc)
     
     kraus_results = evolve_noisy_circuit(rho0, gate_list, yaqs_noise_model, num_layers)
-
     
     # Compare results
-    print(f"\nResults comparison:")
+    print("\nResults comparison:")
     print(f"Qiskit noiseless: {qiskit_noiseless_results}")
     print(f"Qiskit with noise: {qiskit_results}")
     print(f"Kraus with noise: {kraus_results}")
     
-    # Check if noise is actually being applied
-    qiskit_noise_diff = np.abs(qiskit_results - qiskit_noiseless_results)
-    print(f"Qiskit noise effect: {qiskit_noise_diff}")
+    # Calculate noise effect
+    qiskit_noise_effect = qiskit_noiseless_results - qiskit_results
+    print(f"Qiskit noise effect: {qiskit_noise_effect}")
     
-    # Compare Qiskit vs Kraus
-    difference = np.abs(qiskit_results - kraus_results)
-    max_diff = np.max(difference)
-    
+    # Calculate differences
+    max_diff = np.max(np.abs(qiskit_results - kraus_results))
     print(f"Qiskit vs Kraus max difference: {max_diff:.6f}")
     print(f"Tolerance: {tolerance}")
     
-    if max_diff < tolerance:
+    if max_diff <= tolerance:
         print(f"✅ {test_name} PASSED: Max difference = {max_diff:.6f}")
-        return True
     else:
         print(f"❌ {test_name} FAILED: Max difference = {max_diff:.6f}")
+        
+        # Detailed comparison
         print("\nDetailed comparison:")
         print(f"  Qiskit: {qiskit_results}")
         print(f"  Kraus:  {kraus_results}")
-        print(f"  Diff:   {difference}")
-        return False
+        print(f"  Diff:   {qiskit_results - kraus_results}")
+    
+    return max_diff <= tolerance
 
 
 def test_single_qubit_noise():
@@ -94,14 +93,14 @@ def test_single_qubit_noise():
     print("SINGLE QUBIT NOISE TESTS")
     print("="*60)
     
-    # # Test 1: Single qubit H gate with dephasing
-    # run_noisy_comparison_test(
-    #     "1-Qubit H Gate with Dephasing",
-    #     num_qubits=1,
-    #     circuit_builder=lambda circ: circ.h(0),
-    #     noise_strengths=[0.1],
-    #     num_layers=1
-    # )
+    # Test 1: Single qubit H gate with dephasing
+    run_noisy_comparison_test(
+        "1-Qubit H Gate with Dephasing",
+        num_qubits=1,
+        circuit_builder=lambda circ: circ.h(0),
+        noise_strengths=[0.1],
+        num_layers=1
+    )
 
     # Test 1: Single qubit H gate with dephasing
     run_noisy_comparison_test(
@@ -109,7 +108,7 @@ def test_single_qubit_noise():
         num_qubits=1,
         circuit_builder=lambda circ: circ.id(0),
         noise_strengths=[0.2],
-        num_layers=1
+        num_layers=4
     )
 
         # Test 1: No gate no noise
@@ -118,17 +117,17 @@ def test_single_qubit_noise():
         num_qubits=1,
         circuit_builder=lambda circ: circ.id(0),
         noise_strengths=[0.0],
-        num_layers=1
+        num_layers=3
     )
     
-    # # Test 2: Single qubit X gate with dephasing
-    # run_noisy_comparison_test(
-    #     "1-Qubit X Gate with Dephasing",
-    #     num_qubits=1,
-    #     circuit_builder=lambda circ: circ.x(0),
-    #     noise_strengths=[0.05],
-    #     num_layers=3
-    # )
+    # Test 2: Single qubit X gate with dephasing
+    run_noisy_comparison_test(
+        "1-Qubit X Gate with Dephasing",
+        num_qubits=1,
+        circuit_builder=lambda circ: circ.x(0),
+        noise_strengths=[0.05],
+        num_layers=3
+    )
 
 
 def test_two_qubit_noise():
@@ -165,14 +164,15 @@ def test_two_qubit_noise():
 
     # Test 3: 2-qubit circuit with bitflip noise
     def identity_circuit(circ):
-        circ.id(0)
-        circ.id(1)
+        # circ.h(0)
+        # circ.h(1)
+        circ.cx(0, 1)
     
     run_noisy_comparison_test(
         "2-Qubit Identity with Bitflip",
         num_qubits=2,
         circuit_builder=identity_circuit,
-        noise_strengths=[0.4, 0.2],num_layers=2
+        noise_strengths=[0.3, 0.3],num_layers=1
     )
 
 

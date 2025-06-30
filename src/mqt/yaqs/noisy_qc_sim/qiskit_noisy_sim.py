@@ -21,8 +21,8 @@ def qiskit_noisy_simulator_stepwise(circuit, noise_model, num_qubits):
     z_expectations = []
     qc_copy = circuit.copy()
 
-    print('circut:')
-    print(qc_copy.draw())
+    # print('circut:')
+    # print(qc_copy.draw())
     # exact_estimator = Estimator()
     noisy_estimator = Estimator(options=dict(backend_options=dict(noise_model=noise_model)))
     pub = (qc_copy, observables)

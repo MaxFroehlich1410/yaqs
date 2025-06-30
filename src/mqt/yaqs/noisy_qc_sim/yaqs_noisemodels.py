@@ -65,6 +65,7 @@ def create_yaqs_bitflip_noise(num_qubits: int, noise_strengths: list) -> NoiseMo
     pair_qubit_strength = noise_strengths[1] if len(noise_strengths) > 1 else single_qubit_strength
     
     processes = []
+
     
     # Single qubit dephasing
     for qubit in range(num_qubits):
@@ -82,6 +83,9 @@ def create_yaqs_bitflip_noise(num_qubits: int, noise_strengths: list) -> NoiseMo
             "sites": [qubit, qubit + 1],
             "strength": pair_qubit_strength
         })
+    
+    for process in processes:
+        process["strength"] = process["strength"]/np.sqrt(len(processes))
     
     return NoiseModel(processes)
 
