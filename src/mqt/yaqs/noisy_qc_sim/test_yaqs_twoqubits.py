@@ -41,7 +41,7 @@ if __name__ == "__main__":
 
    
 
-    noise_strength = 0.3
+    noise_strength = 0.1
     # processes = [{
     #         "name": "xx",
     #         "sites": [0, 1],
