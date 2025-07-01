@@ -135,6 +135,24 @@ class YY:
 
     matrix = np.kron(Y.matrix, Y.matrix)
 
+class Identity:
+    """Class representing the identity noise operator for a two-level system.
+
+    Attributes:
+        matrix (np.ndarray): A 2x2 matrix representing the dephasing operator,
+            defined as [[1, 0], [0, 1]].
+    """
+
+    matrix = np.array([[1, 0], [0, 1]])
+
+class DoubleIdentity:
+    """Class representing the double identity noise operator for a two-level system.
+
+    Attributes:
+        matrix (np.ndarray): A 4x4 matrix representing the tensor product Identity ⊗ Identity.
+    """
+    matrix = np.kron(Identity.matrix, Identity.matrix)
+
 
 class NoiseLibrary:
     """A library of noise operator classes.
@@ -151,7 +169,8 @@ class NoiseLibrary:
         double_relaxation: Class representing the double relaxation noise operator.
         double_dephasing: Class representing the double dephasing noise operator.
     """
-
+    identity = Identity
+    double_identity = DoubleIdentity
     excitation = Excitation
     relaxation = Relaxation
     dephasing = Dephasing

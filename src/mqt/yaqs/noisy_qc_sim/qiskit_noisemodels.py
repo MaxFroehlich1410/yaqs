@@ -56,18 +56,18 @@ def qiskit_bitflip_noise_2(num_qubits: int, noise_strengths: list) -> QiskitNois
 
 
     # Single qubit dephasing
-    single_qubit_dephasing = PauliError([Pauli('I'), Pauli('X')], [1-single_qubit_strength, single_qubit_strength])
-    single_qubit_dephasing_2 = PauliError([Pauli('I'), Pauli('X')], [1-single_qubit_strength*2, single_qubit_strength*2])
+    single_qubit_bitflip = PauliError([Pauli('I'), Pauli('X')], [1-single_qubit_strength, single_qubit_strength])
+    single_qubit_bitflip_2 = PauliError([Pauli('I'), Pauli('X')], [1-single_qubit_strength*2, single_qubit_strength*2])
     # Two qubit ZZ dephasing
-    two_qubit_dephasing = PauliError([Pauli('II'), Pauli('XX')], [1-pair_qubit_strength, pair_qubit_strength])
+    two_qubit_bitflip = PauliError([Pauli('II'), Pauli('XX')], [1-pair_qubit_strength, pair_qubit_strength])
 
     for qubit in range(num_qubits):
         if qubit == 0:
-            noise_model.add_quantum_error(single_qubit_dephasing, ["id", "x", "y", "z", "h", "s", "sdg", "t", "tdg", "rx", "ry", "rz", "u1", "u2", "u3"], [qubit])
+            noise_model.add_quantum_error(single_qubit_bitflip, ["id", "x", "y", "z", "h", "s", "sdg", "t", "tdg", "rx", "ry", "rz", "u1", "u2", "u3"], [qubit])
         else:
-            noise_model.add_quantum_error(single_qubit_dephasing_2, ["id", "x", "y", "z", "h", "s", "sdg", "t", "tdg", "rx", "ry", "rz", "u1", "u2", "u3"], [qubit])
+            noise_model.add_quantum_error(single_qubit_bitflip_2, ["id", "x", "y", "z", "h", "s", "sdg", "t", "tdg", "rx", "ry", "rz", "u1", "u2", "u3"], [qubit])
     for qubit in range(num_qubits - 1):
-        noise_model.add_quantum_error(two_qubit_dephasing, ["cx", "cz", "swap", "rxx", "ryy", "rzz", "rzx"], [qubit, qubit + 1])
+        noise_model.add_quantum_error(two_qubit_bitflip, ["cx", "cz", "swap", "rxx", "ryy", "rzz", "rzx"], [qubit, qubit + 1])
 
     return noise_model
 
