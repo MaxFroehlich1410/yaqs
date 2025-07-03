@@ -92,7 +92,11 @@ def create_probability_distribution(
 
     dp_m_list = []
     n_sites = state.length
-
+    print('-'*100)
+    print('INSIDE create probability distribution')
+    for process in noise_model.processes:
+        print('process', process)        
+    print('-'*100)
     for site in range(n_sites):
         # Shift ortho center to the right as needed (no shift for site 0)
         if site not in {0, n_sites}:
@@ -107,6 +111,10 @@ def create_probability_distribution(
                 jumped_state = copy.deepcopy(state)
                 jumped_state.tensors[site] = oe.contract("ab, bcd->acd", jump_operator, state.tensors[site])
                 dp_m = dt * gamma * jumped_state.norm(site)
+                # print('jump operator', jump_operator)
+                # print('norm', jumped_state.norm(site))
+                # print('gamma', gamma)
+                # print('dp_m', dp_m)
                 dp_m_list.append(dp_m.real)
                 jump_dict["jumps"].append(jump_operator)
                 jump_dict["strengths"].append(gamma)
@@ -140,6 +148,7 @@ def create_probability_distribution(
     # Normalize the probabilities
     dp: float = np.sum(dp_m_list)
     jump_dict["probabilities"] = (np.array(dp_m_list) / dp).tolist() if dp > 0 else [0.0] * len(dp_m_list)
+    # print('dp_m_list', dp_m_list)
     return jump_dict
 
 
@@ -196,6 +205,7 @@ def stochastic_process(
             msg = f"Only nearest-neighbor 2-site jumps are supported (got sites {i}, {j})"
             raise ValueError(msg)
         merged = merge_mps_tensors(state.tensors[i], state.tensors[j])
+        # print('applying two site jump operator')
         merged = oe.contract("ab, bcd->acd", jump_operator, merged)
         # For stochastic jumps, always contract singular values to the right
         tensor_left_new, tensor_right_new = split_mps_tensor(merged, "right", sim_params, dynamic=False)

@@ -174,6 +174,11 @@ def _run_circuit(
 
 
     """
+    print('-'*100)
+    print('INSIDE _run_circuit')
+    for process in noise_model.processes:
+        print('process', process)        
+    print('-'*100)
     assert initial_state.length == operator.num_qubits, "State and circuit qubit counts do not match."
     operator = copy.deepcopy(operator.reverse_bits())
 
