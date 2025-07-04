@@ -155,7 +155,7 @@ if __name__ == "__main__":
         # YAQS simulation
         #########################################################
 
-        sim_params = StrongSimParams(observables=[Observable(gate=Z(), sites=[i]) for i in range(2)], num_traj=10000, max_bond_dim=2, threshold=1e-14, window_size=0, get_state=False)
+        sim_params = StrongSimParams(observables=[Observable(gate=Z(), sites=[i]) for i in range(2)], num_traj=10, max_bond_dim=2, threshold=1e-14, window_size=0, get_state=False)
         
         initial_mps = MPS(2, state = "zeros", pad=2)
         
