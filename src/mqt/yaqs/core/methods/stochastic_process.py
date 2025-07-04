@@ -92,11 +92,6 @@ def create_probability_distribution(
 
     dp_m_list = []
     n_sites = state.length
-    print('-'*100)
-    print('INSIDE create probability distribution')
-    for process in noise_model.processes:
-        print('process', process)        
-    print('-'*100)
     for site in range(n_sites):
         # Shift ortho center to the right as needed (no shift for site 0)
         if site not in {0, n_sites}:

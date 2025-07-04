@@ -35,8 +35,8 @@ if __name__ == "__main__":
     kraus_results_list = []
     yaqs_results_list = []
 
-    noise_strengths = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7]
-    noise_strengths = [0.5]
+    noise_strengths = [0.0, 0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.1]
+    # noise_strengths = [0.5]
     
 
     for noise_strength in noise_strengths:
@@ -44,7 +44,7 @@ if __name__ == "__main__":
         print(f"Starting noisy quantum circuit simulator comparison tests for noise strength: {noise_strength}")
         print("-"*100)
 
-        gamma = noise_strength *1.45
+        gamma = -0.5 * np.log(1-noise_strength*2)
 
         # direct vector matrix simulation
         #########################################################
@@ -155,7 +155,7 @@ if __name__ == "__main__":
         # YAQS simulation
         #########################################################
 
-        sim_params = StrongSimParams(observables=[Observable(gate=Z(), sites=[i]) for i in range(2)], num_traj=1000, max_bond_dim=2, threshold=1e-14, window_size=0, get_state=False)
+        sim_params = StrongSimParams(observables=[Observable(gate=Z(), sites=[i]) for i in range(2)], num_traj=10000, max_bond_dim=2, threshold=1e-14, window_size=0, get_state=False)
         
         initial_mps = MPS(2, state = "zeros", pad=2)
         
