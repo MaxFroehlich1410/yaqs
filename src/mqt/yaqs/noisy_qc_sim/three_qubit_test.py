@@ -36,6 +36,7 @@ if __name__ == "__main__":
     yaqs_results_list = []
 
     noise_strengths = [0.0, 0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.1]
+    noise_strengths = [0.02]
     
     
 
@@ -114,7 +115,13 @@ if __name__ == "__main__":
                 "name": "x",
                 "sites": [1],
                 "strength": (1-gamma)*gamma
-            }
+            }, 
+              {
+                "name": "x",
+                "sites": [2],
+                "strength": (1-gamma)*gamma*100
+              }
+
             ]
 
 

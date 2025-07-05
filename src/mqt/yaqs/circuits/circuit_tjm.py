@@ -23,6 +23,7 @@ from qiskit.converters import circuit_to_dag
 
 from ..core.data_structures.networks import MPO, MPS
 from ..core.data_structures.simulation_parameters import WeakSimParams
+from ..core.data_structures.noise_model import NoiseModel
 from ..core.methods.dissipation import apply_dissipation
 from ..core.methods.stochastic_process import stochastic_process
 from ..core.methods.tdvp import local_dynamic_tdvp, two_site_tdvp
@@ -33,7 +34,6 @@ if TYPE_CHECKING:
     from qiskit.circuit import QuantumCircuit
     from qiskit.dagcircuit import DAGCircuit, DAGOpNode
 
-    from ..core.data_structures.noise_model import NoiseModel
     from ..core.data_structures.simulation_parameters import StrongSimParams
     from ..core.libraries.gate_library import BaseGate
 
@@ -205,6 +205,66 @@ def apply_two_qubit_gate(state: MPS, node: DAGOpNode, sim_params: StrongSimParam
         state.tensors[i] = short_state.tensors[i - window[0]]
 
 
+def apply_noisy_two_qubit_gate(state: MPS, noise_model: NoiseModel | None, node: DAGOpNode, sim_params: StrongSimParams | WeakSimParams) -> None:
+    """Apply two-qubit gate.
+
+    Applies a two-qubit gate to the given Matrix Product State (MPS) with dynamic TDVP.
+
+    Args:
+        state (MPS): The Matrix Product State to which the gate will be applied.
+        node (DAGOpNode): The node representing the two-qubit gate in the Directed Acyclic Graph (DAG).
+        sim_params (StrongSimParams | WeakSimParams): Simulation parameters that determine the behavior
+        of the algorithm.
+
+    .
+    """
+    gate = convert_dag_to_tensor_algorithm(node)[0]
+
+    # Construct the MPO for the two-qubit gate.
+    mpo, first_site, last_site = construct_generator_mpo(gate, state.length)
+
+    window_size = 1
+    short_state, short_mpo, window = apply_window(state, mpo, first_site, last_site, window_size)
+    if np.abs(first_site - last_site) == 1:
+        # Apply two-site TDVP for nearest-neighbor gates.
+        two_site_tdvp(short_state, short_mpo, sim_params)
+    else:
+        local_dynamic_tdvp(short_state, short_mpo, sim_params)
+    print(first_site, last_site)
+    print(state.length)
+
+    # get local noise model from global noise model
+    local_processes = []
+    if short_state.length > 3:
+        for process in noise_model.processes:
+            if process["sites"]==[first_site + 1] or process["sites"]==[last_site - 1] or process["sites"]==[first_site + 1, last_site - 1]:
+                local_processes.append(process)
+    else: 
+        if short_mpo.tensors[0][0,0]==np.eye(2):
+            for process in noise_model.processes:
+                if process["sites"]==[first_site + 1] or process["sites"]==[last_site] or process["sites"]==[first_site + 1, last_site]:
+                    local_processes.append(process)
+
+
+        elif short_mpo.tensors[-1][0,0]==np.eye(2):
+            for process in noise_model.processes:
+                if process["sites"]==[first_site] or process["sites"]==[last_site-1] or process["sites"]==[first_site, last_site-1]:
+                    local_processes.append(process)
+
+
+    local_noise_model = NoiseModel(local_processes)
+    print('local noise model', local_noise_model.processes)
+
+    # apply noise to qubits affected by the gate
+    apply_dissipation(short_state, local_noise_model, dt=1, sim_params=sim_params)
+    short_state = stochastic_process(short_state, local_noise_model, dt=1, sim_params=sim_params)
+
+    # Replace the updated tensors back into the full state.
+    for i in range(window[0], window[1] + 1):
+        state.tensors[i] = short_state.tensors[i - window[0]]
+
+
+
 def circuit_tjm(
     args: tuple[int, MPS, NoiseModel | None, StrongSimParams | WeakSimParams, QuantumCircuit],
 ) -> NDArray[np.float64]:
@@ -244,15 +304,20 @@ def circuit_tjm(
         # Process two-qubit gates in even/odd sweeps.
         for group in [even_nodes, odd_nodes]:
             for node in group:
-                apply_two_qubit_gate(state, node, sim_params)
+                if noise_model is not None: 
+                    apply_noisy_two_qubit_gate(state, noise_model, node, sim_params)
+                else: 
+                    apply_two_qubit_gate(state, node, sim_params)
                 # Jump process occurs after each two-qubit gate
-                if noise_model is not None:
-                    apply_dissipation(state, noise_model, dt=1, sim_params=sim_params)
-                    state = stochastic_process(state, noise_model, dt=1, sim_params=sim_params)
-                else:
-                    # Normalizes state
-                    for i in reversed(range(state.length)):
-                        state.shift_orthogonality_center_left(current_orthogonality_center=i, decomposition="QR")
+                # if noise_model is not None:
+                #     apply_dissipation(state, noise_model, dt=1, sim_params=sim_params)
+                #     state = stochastic_process(state, noise_model, dt=1, sim_params=sim_params)
+                # else:
+                #     # Normalizes state
+                #     for i in reversed(range(state.length)):
+                #         state.shift_orthogonality_center_left(current_orthogonality_center=i, decomposition="QR")
+                for i in reversed(range(state.length)):
+                    state.shift_orthogonality_center_left(current_orthogonality_center=i, decomposition="QR")
                 dag.remove_op_node(node)
 
     if isinstance(sim_params, WeakSimParams):
