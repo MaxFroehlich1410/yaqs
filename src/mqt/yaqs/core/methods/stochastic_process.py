@@ -191,6 +191,7 @@ def stochastic_process(
     if len(sites) == 1:
         # 1-site jump
         site = sites[0]
+        print('apply jump to site', site)
         state.tensors[site] = oe.contract("ab, bcd->acd", jump_operator, state.tensors[site])
     elif len(sites) == 2:
         # 2-site jump: merge, apply, split
@@ -199,6 +200,7 @@ def stochastic_process(
         if j != i + 1:
             msg = f"Only nearest-neighbor 2-site jumps are supported (got sites {i}, {j})"
             raise ValueError(msg)
+        print('apply jump to sites', i, j)
         merged = merge_mps_tensors(state.tensors[i], state.tensors[j])
         # print('applying two site jump operator')
         merged = oe.contract("ab, bcd->acd", jump_operator, merged)
