@@ -62,7 +62,7 @@ def steady_state(L):
 if __name__ == "__main__":
 
     # make directory for output
-    output_dir = "tjm_trajectories"
+    output_dir = "tjm_trajectories_L10_T10_factor5_25trajectories"
     os.makedirs(output_dir, exist_ok=True)
 
     # Define parameters
@@ -131,7 +131,7 @@ if __name__ == "__main__":
     # Define the simulation parameters
     sample_timesteps = True
     N = 100
-    batchsize = 10
+    batchsize = 25
     max_bond_dim = 4
     threshold = 1e-6
     order = 1

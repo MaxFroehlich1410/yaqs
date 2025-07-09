@@ -137,6 +137,7 @@ if __name__ == "__main__":
     order = 1
     measurements = [Observable(Z(), site) for site in range(L)]
     gamma =  epsilon*2  # coupling strength (γ)
+    
 
     noise_model = NoiseModel(
     [['excitation']] + [['excitation'] for _ in range(L - 2)] + [['relaxation']],
