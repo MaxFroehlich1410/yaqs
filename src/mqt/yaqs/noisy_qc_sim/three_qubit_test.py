@@ -32,11 +32,13 @@ from mqt.yaqs.core.data_structures.networks import MPS
 
 if __name__ == "__main__":
 
+    vector_matrix_sim_expvals_list = []
     kraus_results_list = []
     yaqs_results_list = []
+    qiskit_results_list = []
 
     noise_strengths = [0.0, 0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.1]
-    noise_strengths = [0.02]
+    noise_strengths = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6]
     
     
 
@@ -47,48 +49,11 @@ if __name__ == "__main__":
 
         gamma = -0.5 * np.log(1-noise_strength*2)
 
-        # direct vector matrix simulation
-        #########################################################
-
-        pauli_x = np.array([[0, 1], [1, 0]])
-        pauli_z = np.array([[1, 0], [0, -1]])
-
-        rho0 = create_all_zero_density_matrix(2)
-
-        CNOT = np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0, 1], [0, 0, 1, 0]])
-        rho1 = CNOT @ rho0 @ CNOT.T
-
-        I_X = np.kron(np.eye(2), pauli_x)
-        X_I = np.kron(pauli_x, np.eye(2))
-        X_X = np.kron(pauli_x, pauli_x)
-
-        p = noise_strength
-        K0 = np.sqrt((1-p)**2) * np.eye(4)
-        K1 = np.sqrt(p*(1-p)) * X_I
-        K2 = np.sqrt(p*(1-p)) * I_X
-        K3 = np.sqrt(p**2) * X_X
-
-        rho_noise = (
-            K0 @ rho1 @ K0.conj().T +
-            K1 @ rho1 @ K1.conj().T +
-            K2 @ rho1 @ K2.conj().T +
-            K3 @ rho1 @ K3.conj().T
-        )
-        
-        vector_matrix_sim_expvals = []
-        vector_matrix_sim_expvals.append(np.trace(rho_noise @ np.kron(pauli_z, np.eye(2))))
-        vector_matrix_sim_expvals.append(np.trace(rho_noise @ np.kron(np.eye(2), pauli_z)))
-        vector_matrix_sim_expvals = np.array([[np.real(val) for val in vector_matrix_sim_expvals]])
-
-        kraus_results_list.append(vector_matrix_sim_expvals)
-        
-        print(f"vector_matrix_sim_expvals: {vector_matrix_sim_expvals}")
-
-
         #########################################################
 
         qc = QuantumCircuit(3)
         qc.cx(0, 1)
+        qc.cx(1, 2)
 
         ### 
         # Qiskit simulation
@@ -97,35 +62,7 @@ if __name__ == "__main__":
         noise_model = qiskit_bitflip_noise(num_qubits=3, noise_strengths=[noise_strength])
         qiskit_results = qiskit_noisy_simulator(qc, noise_model, 3, 1)
         print(f"qiskit_results: {qiskit_results}")
-
-
-
-        
-        processes_yaqs = [{
-                "name": "xx",
-                "sites": [0, 1],
-                    "strength": gamma**2
-            },
-            {
-                "name": "x",
-                "sites": [0],
-                "strength": (1-gamma)*gamma
-            }, 
-            {
-                "name": "x",
-                "sites": [1],
-                "strength": (1-gamma)*gamma
-            }, 
-              {
-                "name": "x",
-                "sites": [2],
-                "strength": (1-gamma)*gamma*100
-              }
-
-            ]
-
-
-    
+        qiskit_results_list.append(qiskit_results)
         ### 
         # Kraus channel func evolve noisy circuit simulation
         #########################################################
@@ -133,6 +70,11 @@ if __name__ == "__main__":
         processes = [{
                 "name": "xx",
                 "sites": [0, 1],
+                "strength": noise_strength**2
+            },
+            {
+                "name": "xx",
+                "sites": [1, 2],
                 "strength": noise_strength**2
             },
             {
@@ -144,52 +86,101 @@ if __name__ == "__main__":
                 "name": "x",
                 "sites": [1],
                 "strength": (1-noise_strength)*noise_strength
+            }, 
+            {
+                "name": "x",
+                "sites": [2],
+                "strength": (1-noise_strength)*noise_strength
             }
             ]
         noise_model = NoiseModel(processes)
-        noise_model_yaqs = NoiseModel(processes_yaqs)
 
-        rho0 = create_all_zero_density_matrix(2)
-
+        rho0 = create_all_zero_density_matrix(3)
         gate_list = circuit_to_unitary_list(qc)
-        
         kraus_results = evolve_noisy_circuit(rho0, gate_list, noise_model, 1)
-        
+        kraus_results_list.append(kraus_results)
         print(f"evolve_noisy_circuit results: {kraus_results}")
-
 
         ### 
         # YAQS simulation
         #########################################################
 
-        sim_params = StrongSimParams(observables=[Observable(gate=Z(), sites=[i]) for i in range(2)], num_traj=1000, max_bond_dim=2, threshold=1e-14, window_size=0, get_state=False)
-        
+        processes_yaqs = [{
+                "name": "xx",
+                "sites": [0, 1],
+                    "strength": gamma**2
+            },
+            {
+                "name": "xx",
+                "sites": [1, 2],
+                "strength": gamma**2
+            },
+            {
+                "name": "x",
+                "sites": [0],
+                "strength": (1-gamma)*gamma
+            }, 
+            {
+                "name": "x",
+                "sites": [1],
+                "strength": (1-gamma)*gamma
+            },
+            {
+                "name": "x",
+                "sites": [2],
+                "strength": (1-gamma)*gamma
+            }
+            ]
+        noise_model_yaqs = NoiseModel(processes_yaqs)
+        sim_params = StrongSimParams(observables=[Observable(gate=Z(), sites=[i]) for i in range(3)], num_traj=10000, max_bond_dim=2, threshold=1e-14, window_size=0, get_state=False)
         initial_mps = MPS(3, state = "zeros", pad=2)
-        
         simulator.run(initial_mps, qc, sim_params, noise_model_yaqs)
         yaqs_results = []
-        for i in range(2):
+        for i in range(3):
             yaqs_results.append(sim_params.observables[i].results)
 
         yaqs_results_list.append(yaqs_results)
         
         print(f"yaqs_results: {yaqs_results}")
 
-    difference = [kraus_results_list[i][0] - yaqs_results_list[i][0] for i in range(len(kraus_results_list))]
-    kraus_results_list = [kraus_results_list[i][0] for i in range(len(kraus_results_list))]
-    yaqs_results_list = [yaqs_results_list[i][0] for i in range(len(yaqs_results_list))]
-    # plot difference between kraus and yaqs results    
-    plt.plot(noise_strengths, kraus_results_list, marker="o", label='Kraus')
-    plt.plot(noise_strengths, yaqs_results_list, marker="s", label='YAQS')
-    plt.plot(noise_strengths, difference, marker="x", linestyle="--", label='Kraus - YAQS')
+    # print(f"kraus_results_list shape: {np.array(kraus_results_list).shape}")
+    # print(f"yaqs_results_list shape: {np.array(yaqs_results_list).shape}")
+    # print(f"qiskit_results shape: {np.array(qiskit_results).shape}")
+    # difference = [kraus_results_list[i][0] - yaqs_results_list[i][0] for i in range(len(kraus_results_list))]
+    # kraus_results_list = [kraus_results_list[i][0] for i in range(len(kraus_results_list))]
+    # yaqs_results_list = [yaqs_results_list[i][0] for i in range(len(yaqs_results_list))]
+    # # plot difference between kraus and yaqs results    
+    # plt.plot(noise_strengths, kraus_results_list, marker="o", label='Kraus')
+    # plt.plot(noise_strengths, yaqs_results_list, marker="s", label='YAQS')
+    # plt.plot(noise_strengths, difference, marker="x", linestyle="--", label='Kraus - YAQS')
+
+    # plt.xlabel('Noise Strength')
+    # plt.ylabel('Expectation Value')
+    # plt.title("Comparison of Kraus and YAQS Simulation")
+    # plt.grid(True, which='both', linestyle='--', linewidth=0.5, alpha=0.7)
+    # plt.legend()
+    # plt.tight_layout()
+    # plt.show()
+
+    num_noise_strengths = len(kraus_results_list)
+    num_qubits = 3
+
+    for q in range(num_qubits):
+        kraus_q = [kraus_results_list[i][0, q] for i in range(num_noise_strengths)]
+        yaqs_q = [yaqs_results_list[i][q][0] for i in range(num_noise_strengths)]
+        diff_q = [k - y for k, y in zip(kraus_q, yaqs_q)]
+        
+        plt.plot(noise_strengths, kraus_q, marker="o", label=f'Kraus q{q}')
+        plt.plot(noise_strengths, yaqs_q, marker="s", label=f'YAQS q{q}')
+        plt.plot(noise_strengths, diff_q, marker="x", linestyle="--", label=f'Kraus - YAQS q{q}')
 
     plt.xlabel('Noise Strength')
     plt.ylabel('Expectation Value')
-    plt.title("Comparison of Kraus and YAQS Simulation")
-    plt.grid(True, which='both', linestyle='--', linewidth=0.5, alpha=0.7)
+    plt.title("Comparison of Kraus and YAQS Simulation (per qubit)")
     plt.legend()
-    plt.tight_layout()
+    plt.grid(True)
     plt.show()
+
     
     
     

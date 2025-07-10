@@ -230,30 +230,24 @@ def apply_noisy_two_qubit_gate(state: MPS, noise_model: NoiseModel | None, node:
         two_site_tdvp(short_state, short_mpo, sim_params)
     else:
         local_dynamic_tdvp(short_state, short_mpo, sim_params)
-    print(first_site, last_site)
-    print(state.length)
+    # print(first_site, last_site)
+    # print(state.length)
 
     # get local noise model from global noise model
     local_processes = []
-    if short_state.length > 3:
-        for process in noise_model.processes:
-            if process["sites"]==[first_site + 1] or process["sites"]==[last_site - 1] or process["sites"]==[first_site + 1, last_site - 1]:
-                local_processes.append(process)
-    else: 
-        if short_mpo.tensors[0][0,0]==np.eye(2):
-            for process in noise_model.processes:
-                if process["sites"]==[first_site + 1] or process["sites"]==[last_site] or process["sites"]==[first_site + 1, last_site]:
-                    local_processes.append(process)
+    gate_sites = [[i] for i in range(first_site, last_site+1)]
+    neighbor_pairs = [[gate_sites[i], gate_sites[i+1]] for i in range(len(gate_sites)-1)]
 
-
-        elif short_mpo.tensors[-1][0,0]==np.eye(2):
-            for process in noise_model.processes:
-                if process["sites"]==[first_site] or process["sites"]==[last_site-1] or process["sites"]==[first_site, last_site-1]:
-                    local_processes.append(process)
+    for process in noise_model.processes:
+        if process["sites"] in neighbor_pairs:
+            local_processes.append(process)
+        elif process["sites"] in gate_sites:
+            local_processes.append(process)
+        
 
 
     local_noise_model = NoiseModel(local_processes)
-    print('local noise model', local_noise_model.processes)
+    # print('local noise model', local_noise_model.processes)
 
     # apply noise to qubits affected by the gate
     apply_dissipation(short_state, local_noise_model, dt=1, sim_params=sim_params)
@@ -305,6 +299,7 @@ def circuit_tjm(
         for group in [even_nodes, odd_nodes]:
             for node in group:
                 if noise_model is not None: 
+                    # print("noisemodel not None")
                     apply_noisy_two_qubit_gate(state, noise_model, node, sim_params)
                 else: 
                     apply_two_qubit_gate(state, node, sim_params)
