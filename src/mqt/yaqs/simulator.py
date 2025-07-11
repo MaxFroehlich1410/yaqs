@@ -68,7 +68,7 @@ def _run_strong_sim(
     """
     backend = circuit_tjm
 
-    if noise_model is None or not noise_model.processes:
+    if noise_model is None or not noise_model.processes or all(proc["strength"] == 0 for proc in noise_model.processes):
         sim_params.num_traj = 1
     else:
         assert not sim_params.get_state, "Cannot return state in noisy circuit simulation due to stochastics."

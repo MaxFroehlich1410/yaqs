@@ -234,24 +234,31 @@ def apply_noisy_two_qubit_gate(state: MPS, noise_model: NoiseModel | None, node:
     # print(state.length)
 
     # get local noise model from global noise model
-    local_processes = []
-    gate_sites = [[i] for i in range(first_site, last_site+1)]
-    neighbor_pairs = [[gate_sites[i], gate_sites[i+1]] for i in range(len(gate_sites)-1)]
-
-    for process in noise_model.processes:
-        if process["sites"] in neighbor_pairs:
-            local_processes.append(process)
-        elif process["sites"] in gate_sites:
-            local_processes.append(process)
-        
+    if noise_model is not None:
+        local_processes = []
+        gate_sites = [[i] for i in range(first_site, last_site+1)]
+        neighbor_pairs = [[i, i+1] for i in range(first_site, last_site)]
 
 
-    local_noise_model = NoiseModel(local_processes)
-    # print('local noise model', local_noise_model.processes)
+        for process in noise_model.processes:
+            # print('process', process["sites"])
+            # print('neighbor_pairs', neighbor_pairs)
+            if process["sites"] in neighbor_pairs:
+                local_processes.append(process)
+            elif process["sites"] in gate_sites:
+                local_processes.append(process)
+            
 
-    # apply noise to qubits affected by the gate
-    apply_dissipation(short_state, local_noise_model, dt=1, sim_params=sim_params)
-    short_state = stochastic_process(short_state, local_noise_model, dt=1, sim_params=sim_params)
+
+        local_noise_model = NoiseModel(local_processes)
+        # print('___'*100)
+        # print('first site, last site', first_site, last_site)
+        # print('local noise model', local_noise_model.processes)
+        # print('___'*100)
+
+        # apply noise to qubits affected by the gate
+        apply_dissipation(short_state, local_noise_model, dt=1, sim_params=sim_params)
+        short_state = stochastic_process(short_state, local_noise_model, dt=1, sim_params=sim_params)
 
     # Replace the updated tensors back into the full state.
     for i in range(window[0], window[1] + 1):
@@ -298,7 +305,7 @@ def circuit_tjm(
         # Process two-qubit gates in even/odd sweeps.
         for group in [even_nodes, odd_nodes]:
             for node in group:
-                if noise_model is not None: 
+                if noise_model is not None and not all(proc["strength"] == 0 for proc in noise_model.processes): 
                     # print("noisemodel not None")
                     apply_noisy_two_qubit_gate(state, noise_model, node, sim_params)
                 else: 
