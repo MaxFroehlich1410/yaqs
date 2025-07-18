@@ -46,12 +46,17 @@ def apply_dissipation(
     The function iterates from right to left, updating the
     MPS tensors and shifting the orthogonality center as needed.
     """
+    print(f"DEBUG: apply_dissipation called with dt={dt}")
+    print(f"DEBUG: State norm before dissipation: {state.norm()}")
+    
     if noise_model is None or sim_params is None or all(proc["strength"] == 0 for proc in noise_model.processes):
+        print("DEBUG: No noise or zero strength - only normalizing")
         for i in reversed(range(state.length)):
             state.shift_orthogonality_center_left(current_orthogonality_center=i, decomposition="QR")
         return
 
     n_sites = state.length
+    print(f"DEBUG: Applying dissipation to {n_sites} sites")
 
     # Prepare: For each bond, collect all 2-site processes acting on that bond
     two_site_on_bond = defaultdict(list)
@@ -59,13 +64,18 @@ def apply_dissipation(
         if len(process["sites"]) == 2:
             bond = tuple(sorted(process["sites"]))  # e.g. (i-1, i)
             two_site_on_bond[bond].append(process)
+    
+    print(f"DEBUG: Two-site processes by bond: {dict(two_site_on_bond)}")
 
     for i in reversed(range(n_sites)):
+        print(f"DEBUG: Processing site {i} in dissipation sweep")
+        
         # 1. Apply all 1-site dissipators on site i
         for process in noise_model.processes:
             if len(process["sites"]) == 1 and process["sites"][0] == i:
                 gamma = process["strength"]
                 jump_operator = process["jump_operator"]
+                print(f"DEBUG: Applying 1-site dissipator at site {i}, strength={gamma}")
                 mat = np.conj(jump_operator).T @ jump_operator
                 dissipative_operator = expm(-0.5 * dt * gamma * mat)
                 state.tensors[i] = oe.contract("ab, bcd->acd", dissipative_operator, state.tensors[i])
@@ -79,6 +89,7 @@ def apply_dissipation(
             for process in processes_here:
                 gamma = process["strength"]
                 jump_operator = process["jump_operator"]
+                print(f"DEBUG: Applying 2-site dissipator at bond ({i-1}, {i}), strength={gamma}")
                 mat = np.conj(jump_operator).T @ jump_operator
                 dissipative_operator = expm(-0.5 * dt * gamma * mat)
 
@@ -93,3 +104,5 @@ def apply_dissipation(
         # Shift orthogonality center
         if i != 0:
             state.shift_orthogonality_center_left(current_orthogonality_center=i, decomposition="SVD")
+    
+    print(f"DEBUG: State norm after dissipation: {state.norm()}")

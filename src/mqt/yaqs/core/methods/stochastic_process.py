@@ -85,13 +85,17 @@ def create_probability_distribution(
             - "sites": Site indices (list of 1 or 2 ints) where each jump operator is applied.
             - "probabilities": Normalized probabilities for each possible jump.
     """
+    print(f"DEBUG: create_probability_distribution called")
     jump_dict: dict[str, list[Any]] = {"jumps": [], "strengths": [], "sites": [], "probabilities": []}
 
     if noise_model is None or not noise_model.processes:
+        print("DEBUG: No noise model or no processes")
         return jump_dict
 
     dp_m_list = []
     n_sites = state.length
+    print(f"DEBUG: Processing {n_sites} sites for jump probabilities")
+    
     for site in range(n_sites):
         # Shift ortho center to the right as needed (no shift for site 0)
         if site not in {0, n_sites}:
@@ -102,10 +106,12 @@ def create_probability_distribution(
             if len(process["sites"]) == 1 and process["sites"][0] == site:
                 gamma = process["strength"]
                 jump_operator = process["jump_operator"]
+                print(f"DEBUG: Computing 1-site jump probability at site {site}, strength={gamma}")
 
                 jumped_state = copy.deepcopy(state)
                 jumped_state.tensors[site] = oe.contract("ab, bcd->acd", jump_operator, state.tensors[site])
                 dp_m = dt * gamma * jumped_state.norm(site)
+                print(f"DEBUG: 1-site jump probability: {dp_m}")
                 # print('jump operator', jump_operator)
                 # print('norm', jumped_state.norm(site))
                 # print('gamma', gamma)
@@ -121,6 +127,7 @@ def create_probability_distribution(
                 if len(process["sites"]) == 2 and process["sites"][0] == site and process["sites"][1] == site + 1:
                     gamma = process["strength"]
                     jump_operator = process["jump_operator"]
+                    print(f"DEBUG: Computing 2-site jump probability at sites [{site}, {site+1}], strength={gamma}")
 
                     jumped_state = copy.deepcopy(state)
                     # merge the tensors at site and site+1
@@ -130,6 +137,7 @@ def create_probability_distribution(
                     # apply the 2-site jump operator
                     merged = oe.contract("ab, bcd->acd", jump_operator, merged)
                     dp_m = dt * gamma * jumped_state.norm(site)
+                    print(f"DEBUG: 2-site jump probability: {dp_m}")
                     # split the tensor (always contract singular values right for probabilities)
                     tensor_left_new, tensor_right_new = split_mps_tensor(merged, "right", sim_params, dynamic=False)
                     jumped_state.tensors[site], jumped_state.tensors[site + 1] = tensor_left_new, tensor_right_new
@@ -142,7 +150,9 @@ def create_probability_distribution(
 
     # Normalize the probabilities
     dp: float = np.sum(dp_m_list)
+    print(f"DEBUG: Total probability before normalization: {dp}")
     jump_dict["probabilities"] = (np.array(dp_m_list) / dp).tolist() if dp > 0 else [0.0] * len(dp_m_list)
+    print(f"DEBUG: Normalized probabilities: {jump_dict['probabilities']}")
     # print('dp_m_list', dp_m_list)
     return jump_dict
 
@@ -174,24 +184,41 @@ def stochastic_process(
     Raises:
         ValueError: If a 2-site jump is not nearest-neighbor, or if the jump operator does not act on 1 or 2 sites.
     """
+    print(f"DEBUG: stochastic_process called with dt={dt}")
+    print(f"DEBUG: State norm before stochastic process: {state.norm()}")
+    
     dp = calculate_stochastic_factor(state)
+    print(f"DEBUG: Stochastic factor (jump probability): {dp}")
+    
     rng = np.random.default_rng()
-    if noise_model is None or rng.random() >= dp:
+    random_val = rng.random()
+    print(f"DEBUG: Random value: {random_val}")
+    
+    if noise_model is None or random_val >= dp:
         # No jump occurs; shift the state to canonical form at site 0.
+        print("DEBUG: No jump occurs - only normalizing")
         state.shift_orthogonality_center_left(0)
+        print(f"DEBUG: State norm after no-jump normalization: {state.norm()}")
         return state
 
     # A jump occurs: create the probability distribution and select a jump operator.
+    print("DEBUG: Jump occurs - creating probability distribution")
     jump_dict = create_probability_distribution(state, noise_model, dt, sim_params)
+    print(f"DEBUG: Number of possible jumps: {len(jump_dict['probabilities'])}")
+    print(f"DEBUG: Jump probabilities: {jump_dict['probabilities']}")
+    
     choices = list(range(len(jump_dict["probabilities"])))
     choice = rng.choice(choices, p=jump_dict["probabilities"])
     jump_operator = jump_dict["jumps"][choice]
     sites = jump_dict["sites"][choice]
+    
+    print(f"DEBUG: Selected jump {choice} on sites {sites}")
+    print(f"DEBUG: Jump operator shape: {jump_operator.shape}")
 
     if len(sites) == 1:
         # 1-site jump
         site = sites[0]
-        # print('apply jump to site', site)
+        print(f"DEBUG: Applying 1-site jump to site {site}")
         state.tensors[site] = oe.contract("ab, bcd->acd", jump_operator, state.tensors[site])
     elif len(sites) == 2:
         # 2-site jump: merge, apply, split
@@ -200,7 +227,7 @@ def stochastic_process(
         if j != i + 1:
             msg = f"Only nearest-neighbor 2-site jumps are supported (got sites {i}, {j})"
             raise ValueError(msg)
-        # print('apply jump to sites', i, j)
+        print(f"DEBUG: Applying 2-site jump to sites {i}, {j}")
         merged = merge_mps_tensors(state.tensors[i], state.tensors[j])
         # print('applying two site jump operator')
         merged = oe.contract("ab, bcd->acd", jump_operator, merged)
@@ -212,5 +239,7 @@ def stochastic_process(
         raise ValueError(msg)
 
     # Normalize MPS after jump
+    print(f"DEBUG: Normalizing state after jump")
     state.normalize("B", decomposition="SVD")
+    print(f"DEBUG: State norm after jump and normalization: {state.norm()}")
     return state

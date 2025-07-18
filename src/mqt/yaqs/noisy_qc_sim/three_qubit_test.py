@@ -69,7 +69,7 @@ if __name__ == "__main__":
 
     noise_strengths = [0.0, 0.01, 0.02, 0.03, 0.04, 0.05] #, 0.06, 0.07, 0.08, 0.09, 0.1] #, 0.11, 0.12, 0.13, 0.14, 0.15, 0.16, 0.17, 0.18, 0.19, 0.2]
     # noise_strengths = [0.0, 0.1, 0.2, 0.3, 0.4]
-    # noise_strengths = [0.03]
+    noise_strengths = [0.05]
         
     num_qubits = 4
     
@@ -86,9 +86,10 @@ if __name__ == "__main__":
         #########################################################
 
         qc = QuantumCircuit(num_qubits)
-        # qc.rzz(np.pi/4, 0, 1)
+        qc.rzz(np.pi/4, 0, 1)
         qc.rzz(np.pi/4, 1, 2)
         qc.rzz(np.pi/4, 2, 3)
+        # qc.rzz(np.pi/4, 3, 4)
   
 
         ### 
@@ -116,9 +117,9 @@ if __name__ == "__main__":
         #########################################################
 
         noise_model_yaqs = yaqs_noisemodel(num_qubits, noise_strength)
-        sim_params = StrongSimParams(observables=[Observable(gate=Z(), sites=[i]) for i in range(num_qubits)], num_traj=2000, max_bond_dim=2, threshold=1e-14, window_size=0, get_state=False)
+        sim_params = StrongSimParams(observables=[Observable(gate=Z(), sites=[i]) for i in range(num_qubits)], num_traj=1000, max_bond_dim=2, threshold=1e-14, window_size=0, get_state=False)
         initial_mps = MPS(num_qubits, state = "zeros", pad=2)
-        simulator.run(initial_mps, qc, sim_params, noise_model_yaqs)
+        simulator.run(initial_mps, qc, sim_params, noise_model_yaqs, parallel = False)
         yaqs_results = []
         for i in range(num_qubits):
             yaqs_results.append(sim_params.observables[i].results)
@@ -137,6 +138,7 @@ if __name__ == "__main__":
         plt.plot(noise_strengths, kraus_q, marker="o", label=f'Kraus q{q}')
         plt.plot(noise_strengths, yaqs_q, marker="s", label=f'YAQS q{q}')
         plt.plot(noise_strengths, diff_q, marker="x", linestyle="--", label=f'Kraus - YAQS q{q}')
+
 
     plt.xlabel('Noise Strength')
     plt.ylabel('Expectation Value')
