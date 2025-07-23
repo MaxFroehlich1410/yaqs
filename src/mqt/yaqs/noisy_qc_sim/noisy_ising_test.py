@@ -57,6 +57,12 @@ def yaqs_noisemodel(num_qubits, noise_strength):
                 "sites": [j],
                 "strength": -0.5 * np.log(1-(noise_strength*(1-noise_strength))*2)
             })
+    for j in range(num_qubits):
+        processes.append({
+                "name": "identity",
+                "sites": [j],
+                "strength": -0.5 * np.log((1-(1-noise_strength)**2))
+            })
     return NoiseModel(processes)
 
 

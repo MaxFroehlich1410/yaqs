@@ -67,11 +67,11 @@ if __name__ == "__main__":
     yaqs_results_list = []
     qiskit_results_list = []
 
-    noise_strengths = [0.0, 0.01, 0.02, 0.03, 0.04, 0.05] #, 0.06, 0.07, 0.08, 0.09, 0.1] #, 0.11, 0.12, 0.13, 0.14, 0.15, 0.16, 0.17, 0.18, 0.19, 0.2]
+    noise_strengths = [0.0, 0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.1] #, 0.11, 0.12, 0.13, 0.14, 0.15, 0.16, 0.17, 0.18, 0.19, 0.2]
     # noise_strengths = [0.0, 0.1, 0.2, 0.3, 0.4]
-    noise_strengths = [0.05]
+    # noise_strengths = [0.05]
         
-    num_qubits = 4
+    num_qubits = 2
     
 
     for noise_strength in noise_strengths:
@@ -81,14 +81,15 @@ if __name__ == "__main__":
         print(f"Starting noisy quantum circuit simulator comparison tests for noise strength: {noise_strength}")
         print("-"*100)
 
-        gamma = -0.5 * np.log(1-noise_strength*2)
+        # gamma = -0.5 * np.log(1-noise_strength*2) # reverse omega from SPLM paper
+        gamma = -0.5 * np.log(noise_strength*2-1)
 
         #########################################################
 
         qc = QuantumCircuit(num_qubits)
         qc.rzz(np.pi/4, 0, 1)
-        qc.rzz(np.pi/4, 1, 2)
-        qc.rzz(np.pi/4, 2, 3)
+        # qc.rzz(np.pi/4, 1, 2)
+        # qc.rzz(np.pi/4, 2, 3)
         # qc.rzz(np.pi/4, 3, 4)
   
 
@@ -131,7 +132,7 @@ if __name__ == "__main__":
     num_noise_strengths = len(kraus_results_list)
 
     for q in range(num_qubits):
-        kraus_q = [kraus_results_list[i][0, q] for i in range(num_noise_strengths)]
+        kraus_q = [kraus_results_list[i][q] for i in range(num_noise_strengths)]
         yaqs_q = [yaqs_results_list[i][q][0] for i in range(num_noise_strengths)]
         diff_q = [k - y for k, y in zip(kraus_q, yaqs_q)]
         

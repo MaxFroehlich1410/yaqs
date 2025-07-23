@@ -229,7 +229,7 @@ def stochastic_process(
             raise ValueError(msg)
         print(f"DEBUG: Applying 2-site jump to sites {i}, {j}")
         merged = merge_mps_tensors(state.tensors[i], state.tensors[j])
-        # print('applying two site jump operator')
+        print('applying two site jump operator')
         merged = oe.contract("ab, bcd->acd", jump_operator, merged)
         # For stochastic jumps, always contract singular values to the right
         tensor_left_new, tensor_right_new = split_mps_tensor(merged, "right", sim_params, dynamic=False)

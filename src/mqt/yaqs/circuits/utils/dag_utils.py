@@ -52,12 +52,12 @@ def convert_dag_to_tensor_algorithm(dag: DAGCircuit) -> list[NDArray[np.complex1
         # Single node DAG.
         gate = dag
         name = gate.op.name
-        print(f"DEBUG: Converting single gate: {name}")
+        # print(f"DEBUG: Converting single gate: {name}")
 
         attr = getattr(GateLibrary, name)
 
         gate_object = attr(gate.op.params) if gate.op.params else attr()
-        print(f"DEBUG: Gate object created: {gate_object.name}")
+        # print(f"DEBUG: Gate object created: {gate_object.name}")
 
         sites = [gate.qargs[0]._index]  # noqa: SLF001
         if len(gate.qargs) == 2:
@@ -65,24 +65,24 @@ def convert_dag_to_tensor_algorithm(dag: DAGCircuit) -> list[NDArray[np.complex1
         if len(gate.qargs) == 3:
             sites.extend((gate.qargs[1]._index, gate.qargs[2]._index))  # noqa: SLF001
 
-        print(f"DEBUG: Gate sites: {sites}")
+        # print(f"DEBUG: Gate sites: {sites}")
         gate_object.set_sites(*sites)
-        print(f"DEBUG: Gate tensor shape: {gate_object.tensor.shape}")
+        # print(f"DEBUG: Gate tensor shape: {gate_object.tensor.shape}")
         algorithm.append(gate_object)
     else:
         # Multi-node DAG.
-        print(f"DEBUG: Converting multi-node DAG with {len(dag.op_nodes())} operations")
+        # print(f"DEBUG: Converting multi-node DAG with {len(dag.op_nodes())} operations")
         for gate in dag.op_nodes():
             name = gate.op.name
-            print(f"DEBUG: Processing gate: {name}")
+            # print(f"DEBUG: Processing gate: {name}")
             if name in {"measure", "barrier"}:
-                print(f"DEBUG: Skipping {name} gate")
+                # print(f"DEBUG: Skipping {name} gate")
                 continue
 
             attr = getattr(GateLibrary, name)
 
             gate_object = attr(gate.op.params) if gate.op.params else attr()
-            print(f"DEBUG: Gate object created: {gate_object.name}")
+            # print(f"DEBUG: Gate object created: {gate_object.name}")
 
             sites = [gate.qargs[0]._index]  # noqa: SLF001
             if len(gate.qargs) == 2:
@@ -91,12 +91,12 @@ def convert_dag_to_tensor_algorithm(dag: DAGCircuit) -> list[NDArray[np.complex1
                 sites.append(gate.qargs[1]._index)  # noqa: SLF001
                 sites.append(gate.qargs[2]._index)  # noqa: SLF001
 
-            print(f"DEBUG: Gate sites: {sites}")
+            # print(f"DEBUG: Gate sites: {sites}")
             gate_object.set_sites(*sites)
-            print(f"DEBUG: Gate tensor shape: {gate_object.tensor.shape}")
+            # print(f"DEBUG: Gate tensor shape: {gate_object.tensor.shape}")
             algorithm.append(gate_object)
 
-    print(f"DEBUG: Algorithm contains {len(algorithm)} gates")
+    # print(f"DEBUG: Algorithm contains {len(algorithm)} gates")
     return algorithm
 
 

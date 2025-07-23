@@ -24,7 +24,7 @@ from qiskit.converters import circuit_to_dag
 from ..core.data_structures.networks import MPO, MPS
 from ..core.data_structures.simulation_parameters import WeakSimParams
 from ..core.data_structures.noise_model import NoiseModel
-from ..core.methods.dissipation import apply_dissipation
+from ..core.methods.dissipation import apply_dissipation, apply_circuit_dissipation
 from ..core.methods.stochastic_process import stochastic_process
 from ..core.methods.tdvp import local_dynamic_tdvp, two_site_tdvp
 from .utils.dag_utils import convert_dag_to_tensor_algorithm
@@ -218,16 +218,16 @@ def apply_noisy_two_qubit_gate(state: MPS, noise_model: NoiseModel | None, node:
 
     .
     """
-    print("="*80)
-    print("DEBUG: apply_noisy_two_qubit_gate called")
-    print(f"DEBUG: Gate node: {node.op.name}")
-    print(f"DEBUG: Gate qubits: {[q._index for q in node.qargs]}")
-    print(f"DEBUG: State length: {state.length}")
-    print(f"DEBUG: State norm before gate: {state.norm()}")
+    # print("="*80)
+    # print("DEBUG: apply_noisy_two_qubit_gate called")
+    # print(f"DEBUG: Gate node: {node.op.name}")
+    # print(f"DEBUG: Gate qubits: {[q._index for q in node.qargs]}")
+    # print(f"DEBUG: State length: {state.length}")
+    # print(f"DEBUG: State norm before gate: {state.norm()}")
     
     gate = convert_dag_to_tensor_algorithm(node)[0]
-    print(f"DEBUG: Gate tensor shape: {gate.tensor.shape}")
-    print(f"DEBUG: Gate sites: {gate.sites}")
+    # print(f"DEBUG: Gate tensor shape: {gate.tensor.shape}")
+    # print(f"DEBUG: Gate sites: {gate.sites}")
 
     # Construct the MPO for the two-qubit gate.
     mpo, first_site, last_site = construct_generator_mpo(gate, state.length)
@@ -236,66 +236,71 @@ def apply_noisy_two_qubit_gate(state: MPS, noise_model: NoiseModel | None, node:
     window_size = 1
     short_state, short_mpo, window = apply_window(state, mpo, first_site, last_site, window_size)
     print(f"DEBUG: Window: {window}, short_state length: {short_state.length}")
-    print(f"DEBUG: Short state norm before TDVP: {short_state.norm()}")
+    # print(f"DEBUG: Short state norm before TDVP: {short_state.norm()}")
     
     if np.abs(first_site - last_site) == 1:
         # Apply two-site TDVP for nearest-neighbor gates.
-        print("DEBUG: Applying two-site TDVP")
+        # print("DEBUG: Applying two-site TDVP")
         two_site_tdvp(short_state, short_mpo, sim_params)
     else:
-        print("DEBUG: Applying local dynamic TDVP")
+        # print("DEBUG: Applying local dynamic TDVP")
         local_dynamic_tdvp(short_state, short_mpo, sim_params)
     
-    print(f"DEBUG: Short state norm after TDVP: {short_state.norm()}")
+    # print(f"DEBUG: Short state norm after TDVP: {short_state.norm()}")
+    for i in range(window[0], window[1] + 1):
+        state.tensors[i] = short_state.tensors[i - window[0]]
+    print(f"DEBUG: State norm after tensor replacement: {state.norm()}")
 
     # get local noise model from global noise model
     if noise_model is not None:
-        print(f"DEBUG: Noise model has {len(noise_model.processes)} processes")
-        for i, proc in enumerate(noise_model.processes):
-            print(f"DEBUG: Process {i}: {proc}")
+        # print(f"DEBUG: Noise model has {len(noise_model.processes)} processes")
+        # for i, proc in enumerate(noise_model.processes):
+        #     print(f"DEBUG: Process {i}: {proc}")
         
         local_processes = []
         gate_sites = [[i] for i in range(first_site, last_site+1)]
         neighbor_pairs = [[i, i+1] for i in range(first_site, last_site)]
         
-        print(f"DEBUG: Gate sites: {gate_sites}")
-        print(f"DEBUG: Neighbor pairs: {neighbor_pairs}")
-        print(f"DEBUG: Gate acts on sites: {first_site} to {last_site}")
+        # print(f"DEBUG: Gate sites: {gate_sites}")
+        # print(f"DEBUG: Neighbor pairs: {neighbor_pairs}")
+        # print(f"DEBUG: Gate acts on sites: {first_site} to {last_site}")
 
         for process in noise_model.processes:
-            print(f"DEBUG: Checking process {process['sites']} against gate_sites: {gate_sites}")
-            print(f"DEBUG: Checking process {process['sites']} against neighbor_pairs: {neighbor_pairs}")
+            # print(f"DEBUG: Checking process {process['sites']} against gate_sites: {gate_sites}")
+            # print(f"DEBUG: Checking process {process['sites']} against neighbor_pairs: {neighbor_pairs}")
             if process["sites"] in neighbor_pairs:
-                print(f"DEBUG: Adding neighbor process: {process}")
+                # print(f"DEBUG: Adding neighbor process: {process}")
                 local_processes.append(process)
             elif process["sites"] in gate_sites:
-                print(f"DEBUG: Adding gate site process: {process}")
+                # print(f"DEBUG: Adding gate site process: {process}")
                 local_processes.append(process)
-            else:
-                print(f"DEBUG: Process {process['sites']} not included in local noise model")
+            # else:
+            #     # print(f"DEBUG: Process {process['sites']} not included in local noise model")
 
         local_noise_model = NoiseModel(local_processes)
-        print('___'*100)
-        print('DEBUG: Local noise model processes:')
-        for i, proc in enumerate(local_noise_model.processes):
-            print(f"DEBUG: Local process {i}: {proc}")
-        print('___'*100)
+        # print('___'*100)
+        # print('DEBUG: Local noise model processes:')
+        # for i, proc in enumerate(local_noise_model.processes):
+        #     print(f"DEBUG: Local process {i}: {proc}")
+        # print('___'*100)
 
-        print(f"DEBUG: Short state norm before dissipation: {short_state.norm()}")
+        # print(f"DEBUG: Short state norm before dissipation: {short_state.norm()}")
         # apply noise to qubits affected by the gate
-        apply_dissipation(short_state, local_noise_model, dt=1, sim_params=sim_params)
-        print(f"DEBUG: Short state norm after dissipation: {short_state.norm()}")
+        affected_state = MPS(length=2, tensors=state.tensors[first_site : last_site + 1])
+        apply_circuit_dissipation(affected_state, local_noise_model, dt=1, global_start=first_site, sim_params=sim_params)
+        # print(f"DEBUG: Short state norm after dissipation: {short_state.norm()}")
         
-        short_state = stochastic_process(short_state, local_noise_model, dt=1, sim_params=sim_params)
-        print(f"DEBUG: Short state norm after stochastic process: {short_state.norm()}")
+        affected_state = stochastic_process(affected_state, local_noise_model, dt=1, sim_params=sim_params)
+        # print(f"DEBUG: Short state norm after stochastic process: {short_state.norm()}")
 
     # Replace the updated tensors back into the full state.
-    print(f"DEBUG: Replacing tensors from window {window}")
-    for i in range(window[0], window[1] + 1):
-        state.tensors[i] = short_state.tensors[i - window[0]]
+    # print(f"DEBUG: Replacing tensors from window {window}")
+    state.tensors[first_site] = affected_state.tensors[0]
+    state.tensors[last_site] = affected_state.tensors[1]
+
     
-    print(f"DEBUG: State norm after tensor replacement: {state.norm()}")
-    print("="*80)
+    # print(f"DEBUG: State norm after tensor replacement: {state.norm()}")
+    # print("="*80)
 
 
 
@@ -322,63 +327,63 @@ def circuit_tjm(
     """
     _i, initial_state, noise_model, sim_params, circuit = args
     
-    print(f"\n{'#'*80}")
-    print(f"DEBUG: Starting circuit_tjm simulation (trajectory {_i})")
-    print(f"DEBUG: Circuit has {circuit.num_qubits} qubits")
-    print(f"DEBUG: Circuit depth: {circuit.depth()}")
-    print(f"DEBUG: Initial state norm: {initial_state.norm()}")
-    if noise_model is not None:
-        print(f"DEBUG: Noise model has {len(noise_model.processes)} processes")
-        for i, proc in enumerate(noise_model.processes):
-            print(f"DEBUG: Global noise process {i}: {proc}")
-    print(f"{'#'*80}\n")
+    # print(f"\n{'#'*80}")
+    # print(f"DEBUG: Starting circuit_tjm simulation (trajectory {_i})")
+    # print(f"DEBUG: Circuit has {circuit.num_qubits} qubits")
+    # print(f"DEBUG: Circuit depth: {circuit.depth()}")
+    # print(f"DEBUG: Initial state norm: {initial_state.norm()}")
+    #if noise_model is not None:
+        # print(f"DEBUG: Noise model has {len(noise_model.processes)} processes")
+        # for i, proc in enumerate(noise_model.processes):
+        #     print(f"DEBUG: Global noise process {i}: {proc}")
+    # print(f"{'#'*80}\n")
     
     state = copy.deepcopy(initial_state)
 
     dag = circuit_to_dag(circuit)
-    print(f"DEBUG: DAG has {len(dag.op_nodes())} operation nodes")
+    # print(f"DEBUG: DAG has {len(dag.op_nodes())} operation nodes")
 
     layer_count = 0
     while dag.op_nodes():
         layer_count += 1
-        print(f"\nDEBUG: Processing layer {layer_count}")
+        # print(f"\nDEBUG: Processing layer {layer_count}")
         
         single_qubit_nodes, even_nodes, odd_nodes = process_layer(dag)
-        print(f"DEBUG: Layer {layer_count} - Single qubit gates: {len(single_qubit_nodes)}")
-        print(f"DEBUG: Layer {layer_count} - Even two-qubit gates: {len(even_nodes)}")
-        print(f"DEBUG: Layer {layer_count} - Odd two-qubit gates: {len(odd_nodes)}")
+        # print(f"DEBUG: Layer {layer_count} - Single qubit gates: {len(single_qubit_nodes)}")
+        # print(f"DEBUG: Layer {layer_count} - Even two-qubit gates: {len(even_nodes)}")
+        # print(f"DEBUG: Layer {layer_count} - Odd two-qubit gates: {len(odd_nodes)}")
 
         for node in single_qubit_nodes:
-            print(f"DEBUG: Applying single qubit gate: {node.op.name} on qubit {node.qargs[0]._index}")
+            # print(f"DEBUG: Applying single qubit gate: {node.op.name} on qubit {node.qargs[0]._index}")
             apply_single_qubit_gate(state, node)
-            print(f"DEBUG: State norm after single qubit gate: {state.norm()}")
+            # print(f"DEBUG: State norm after single qubit gate: {state.norm()}")
             dag.remove_op_node(node)
 
         # Process two-qubit gates in even/odd sweeps.
         for group_name, group in [("even", even_nodes), ("odd", odd_nodes)]:
             for node in group:
-                print(f"\nDEBUG: Processing {group_name} two-qubit gate: {node.op.name}")
-                print(f"DEBUG: Gate acts on qubits: {[q._index for q in node.qargs]}")
-                print(f"DEBUG: State norm before gate: {state.norm()}")
+                # print(f"\nDEBUG: Processing {group_name} two-qubit gate: {node.op.name}")
+                # print(f"DEBUG: Gate acts on qubits: {[q._index for q in node.qargs]}")
+                # print(f"DEBUG: State norm before gate: {state.norm()}")
                 
                 if noise_model is not None and not all(proc["strength"] == 0 for proc in noise_model.processes): 
-                    print(f"DEBUG: Applying noisy two-qubit gate")
+                    #  print(f"DEBUG: Applying noisy two-qubit gate")
                     apply_noisy_two_qubit_gate(state, noise_model, node, sim_params)
                 else: 
-                    print('DEBUG: Applying noiseless two-qubit gate')
+                    # print('DEBUG: Applying noiseless two-qubit gate')
                     apply_two_qubit_gate(state, node, sim_params)
                 
-                print(f"DEBUG: State norm after gate: {state.norm()}")
+                # print(f"DEBUG: State norm after gate: {state.norm()}")
                 
                 # Normalize state after each gate
-                print(f"DEBUG: Normalizing state after gate")
+                # print(f"DEBUG: Normalizing state after gate")
                 for i in reversed(range(state.length)):
                     state.shift_orthogonality_center_left(current_orthogonality_center=i, decomposition="QR")
-                print(f"DEBUG: State norm after normalization: {state.norm()}")
+                # print(f"DEBUG: State norm after normalization: {state.norm()}")
                 
                 dag.remove_op_node(node)
 
-    print(f"\nDEBUG: Circuit execution completed. Final state norm: {state.norm()}")
+    # print(f"\nDEBUG: Circuit execution completed. Final state norm: {state.norm()}")
 
     if isinstance(sim_params, WeakSimParams):
         if not noise_model or all(proc["strength"] == 0 for proc in noise_model.processes):
@@ -390,7 +395,7 @@ def circuit_tjm(
         return state.measure_shots(shots=1)
     
     # StrongSimParams
-    print(f"\nDEBUG: Computing observables for {len(sim_params.observables)} observables")
+    # print(f"\nDEBUG: Computing observables for {len(sim_params.observables)} observables")
     results = np.zeros((len(sim_params.observables), 1))
     temp_state = copy.deepcopy(state)
     if sim_params.get_state:
@@ -403,19 +408,19 @@ def circuit_tjm(
         elif isinstance(observable.sites, int):
             idx = observable.sites
         
-        print(f"DEBUG: Computing observable {obs_index} at site {idx}")
-        print(f"DEBUG: Observable gate: {observable.gate.name}")
+        # print(f"DEBUG: Computing observable {obs_index} at site {idx}")
+        # print(f"DEBUG: Observable gate: {observable.gate.name}")
         
         if idx > last_site:
-            print(f"DEBUG: Shifting orthogonality center from {last_site} to {idx}")
+            # print(f"DEBUG: Shifting orthogonality center from {last_site} to {idx}")
             for site in range(last_site, idx):
                 temp_state.shift_orthogonality_center_right(site)
             last_site = idx
         
         expectation = temp_state.expect(observable)
         results[obs_index, 0] = expectation
-        print(f"DEBUG: Expectation value for observable {obs_index}: {expectation}")
+        # print(f"DEBUG: Expectation value for observable {obs_index}: {expectation}")
     
-    print(f"DEBUG: Final results: {results.flatten()}")
-    print(f"{'#'*80}\n")
+    # print(f"DEBUG: Final results: {results.flatten()}")
+    # print(f"{'#'*80}\n")
     return results
