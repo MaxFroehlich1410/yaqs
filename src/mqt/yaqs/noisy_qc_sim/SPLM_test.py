@@ -21,13 +21,13 @@ from mqt.yaqs.core.data_structures.networks import MPS
 if __name__ == "__main__":
 
     # circuit
-    num_qubits = 4
+    num_qubits = 3
     qc = QuantumCircuit(num_qubits)
     qc.rzz(np.pi/4, 0, 1)
-    qc.rzz(np.pi/4, 1, 2)
-    qc.rzz(np.pi/4, 2, 3)
+    # qc.rzz(np.pi/4, 1, 2)
+    # qc.rzz(np.pi/4, 2, 3)
 
-    yaqs_noise_rates = [[0.0, 0.0, 0.0], [0.01, 0.01, 0.01], [0.02, 0.02, 0.02], [0.03, 0.03, 0.03], [0.04, 0.04, 0.04], [0.05, 0.05, 0.05]]
+    yaqs_noise_rates = [[0.0, 0.0, 0.0], [0.01, 0.01, 0.01]] #, [0.02, 0.02, 0.02], [0.03, 0.03, 0.03], [0.04, 0.04, 0.04], [0.05, 0.05, 0.05]]
     qiskit_results_list = []
     yaqs_results_list = []
 
@@ -80,7 +80,7 @@ if __name__ == "__main__":
 
 
     # plot
-    for q in range(num_qubits):
+    for q in range(num_qubits-1):
         qiskit_q = [qiskit_results_list[i][0, q] for i in range(len(yaqs_noise_rates))]
         yaqs_q = [yaqs_results_list[i][q][0] for i in range(len(yaqs_noise_rates))]
         diff_q = [k - y for k, y in zip(qiskit_q, yaqs_q)]

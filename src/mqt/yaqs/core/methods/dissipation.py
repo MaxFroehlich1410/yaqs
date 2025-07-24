@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from typing import TYPE_CHECKING
+import copy
 
 import numpy as np
 import opt_einsum as oe
@@ -67,6 +68,9 @@ def apply_dissipation(
     
     print(f"DEBUG: Two-site processes by bond: {dict(two_site_on_bond)}")
 
+    state_copy = copy.deepcopy(state)
+    print(f"DEBUG: Canonical form in apply_dissipation: {state_copy.check_canonical_form()}")
+
     for i in reversed(range(n_sites)):
         print(f"DEBUG: Processing site {i} in dissipation sweep")
         
@@ -79,6 +83,9 @@ def apply_dissipation(
                 mat = np.conj(jump_operator).T @ jump_operator
                 dissipative_operator = expm(-0.5 * dt * gamma * mat)
                 state.tensors[i] = oe.contract("ab, bcd->acd", dissipative_operator, state.tensors[i])
+                state_copy = copy.deepcopy(state)
+                print(f"DEBUG: Canonical form in apply_dissipation after 1-site dissipator: {state_copy.check_canonical_form()}")
+
 
             bond = (i - 1, i)
             processes_here = two_site_on_bond.get(bond, [])
@@ -100,6 +107,9 @@ def apply_dissipation(
                 # since ortho center is shifter to the left after loop
                 tensor_right, tensor_left = split_mps_tensor(merged_tensor, "right", sim_params, dynamic=False)
                 state.tensors[i - 1], state.tensors[i] = tensor_right, tensor_left
+                state_copy = copy.deepcopy(state)
+                print(f"DEBUG: Canonical form in apply_dissipation after 2-site dissipator: {state_copy.check_canonical_form()}")
+
 
         # Shift orthogonality center
         if i != 0:
@@ -148,6 +158,10 @@ def apply_circuit_dissipation(
     
     print(f"DEBUG: Two-site processes by bond: {dict(two_site_on_bond)}")
 
+    state_copy = copy.deepcopy(state)
+    print(f"DEBUG: Canonical form in apply_dissipation: {state_copy.check_canonical_form()}")
+
+
     for i in reversed(range(n_sites)):
         print(f"DEBUG: Processing site {i} in dissipation sweep")
         
@@ -162,6 +176,8 @@ def apply_circuit_dissipation(
                     mat = np.conj(jump_operator).T @ jump_operator
                     dissipative_operator = expm(-0.5 * dt * gamma * mat)
                     state.tensors[i] = oe.contract("ab, bcd->acd", dissipative_operator, state.tensors[i])
+                    state_copy = copy.deepcopy(state)
+                    print(f"DEBUG: Canonical form in apply_dissipation after 1-site dissipator: {state_copy.check_canonical_form()}")
 
                 if process["sites"][0] == global_start + 1 and i ==1:
     
@@ -171,7 +187,8 @@ def apply_circuit_dissipation(
                     mat = np.conj(jump_operator).T @ jump_operator
                     dissipative_operator = expm(-0.5 * dt * gamma * mat)
                     state.tensors[i] = oe.contract("ab, bcd->acd", dissipative_operator, state.tensors[i])
-
+                    state_copy = copy.deepcopy(state)
+                    print(f"DEBUG: Canonical form in apply_dissipation after 1-site dissipator: {state_copy.check_canonical_form()}")
 
 
         # 2. Apply all 2-site dissipators acting on sites (i-1, i)
@@ -193,10 +210,14 @@ def apply_circuit_dissipation(
                 # since ortho center is shifter to the left after loop
                 tensor_right, tensor_left = split_mps_tensor(merged_tensor, "right", sim_params, dynamic=False)
                 state.tensors[i - 1], state.tensors[i] = tensor_right, tensor_left
+                state_copy = copy.deepcopy(state)
+                print(f"DEBUG: Canonical form in apply_dissipation after 2-site dissipator: {state_copy.check_canonical_form()}")
 
         # Shift orthogonality center
         if i != 0:
             state.shift_orthogonality_center_left(current_orthogonality_center=i, decomposition="SVD")
-    
+    state_copy = copy.deepcopy(state)
+    print(f"DEBUG: Canonical form in apply_dissipation at very end: {state_copy.check_canonical_form()}")
+
     print(f"DEBUG: State norm after dissipation: {state.norm()}")
 
