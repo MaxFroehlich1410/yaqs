@@ -132,7 +132,7 @@ if __name__ == "__main__":
     num_noise_strengths = len(kraus_results_list)
 
     for q in range(num_qubits):
-        kraus_q = [kraus_results_list[i][q] for i in range(num_noise_strengths)]
+        kraus_q = [kraus_results_list[i][0, q] for i in range(num_noise_strengths)]
         yaqs_q = [yaqs_results_list[i][q][0] for i in range(num_noise_strengths)]
         diff_q = [k - y for k, y in zip(kraus_q, yaqs_q)]
         

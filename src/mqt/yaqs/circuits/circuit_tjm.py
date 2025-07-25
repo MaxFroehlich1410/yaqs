@@ -163,20 +163,20 @@ def apply_window(state: MPS, mpo: MPO, first_site: int, last_site: int, window_s
     window[1] = min(window[1], state.length - 1)
 
     # Shift the orthogonality center for sites before the window.
-    print(f"DEBUG: Window NEW: {window}")
-    print(f"DEBUG: State length: {state.length}")
-    print(f"DEBUG: window[0]: {window[0]}")
-    print(f"DEBUG: state norm before shift: {state.norm(0)}")
-    print(f"DEBUG: State canonical form before shift: {state.check_canonical_form()}")
+    # print(f"DEBUG: Window NEW: {window}")
+    # print(f"DEBUG: State length: {state.length}")
+    # print(f"DEBUG: window[0]: {window[0]}")
+    # print(f"DEBUG: state norm before shift: {state.norm(0)}")
+    # print(f"DEBUG: State canonical form before shift: {state.check_canonical_form()}")
     for i in range(window[0]):
         state.shift_orthogonality_center_right(i)
-    print(f"DEBUG: State canonical form after shift: {state.check_canonical_form()}")
+    # print(f"DEBUG: State canonical form after shift: {state.check_canonical_form()}")
     short_mpo = MPO()
     short_mpo.init_custom(mpo.tensors[window[0] : window[1] + 1], transpose=False)
     assert window[1] - window[0] + 1 > 1, "MPS cannot be length 1"
     short_state = MPS(length=window[1] - window[0] + 1, tensors=state.tensors[window[0] : window[1] + 1])
-    print(f"DEBUG: short state canonical form: {short_state.check_canonical_form()}")
-    print(f"DEBUG: short state norm after shift: {short_state.norm(0)}")
+    # print(f"DEBUG: short state canonical form: {short_state.check_canonical_form()}")
+    # print(f"DEBUG: short state norm after shift: {short_state.norm(0)}")
     return short_state, short_mpo, window
 
 
@@ -237,13 +237,15 @@ def apply_noisy_two_qubit_gate(state: MPS, noise_model: NoiseModel | None, node:
 
     # Construct the MPO for the two-qubit gate.
     mpo, first_site, last_site = construct_generator_mpo(gate, state.length)
-    print(f"DEBUG: MPO constructed, first_site: {first_site}, last_site: {last_site}")
+    # print(f"DEBUG: MPO constructed, first_site: {first_site}, last_site: {last_site}")
 
     window_size = 1
+    print(f"DEBUG: State canonical form before window: {state.check_canonical_form()}")
     short_state, short_mpo, window = apply_window(state, mpo, first_site, last_site, window_size)
-    print(f"DEBUG: Window: {window}, short_state length: {short_state.length}")
+    #print(f"DEBUG: Window: {window}, short_state length: {short_state.length}")
     # print(f"DEBUG: Short state norm before TDVP: {short_state.norm()}")
-    
+    print(f"DEBUG: Short state canonical form after window: {short_state.check_canonical_form()}")
+    print(f"DEBUG: state canonical form after window: {state.check_canonical_form()}")
     if np.abs(first_site - last_site) == 1:
         # Apply two-site TDVP for nearest-neighbor gates.
         # print("DEBUG: Applying two-site TDVP")
@@ -251,10 +253,12 @@ def apply_noisy_two_qubit_gate(state: MPS, noise_model: NoiseModel | None, node:
     else:
         # print("DEBUG: Applying local dynamic TDVP")
         local_dynamic_tdvp(short_state, short_mpo, sim_params)
+    print(f"DEBUG: Short state canonical form after TDVP: {short_state.check_canonical_form()}")
     
     # print(f"DEBUG: Short state norm after TDVP: {short_state.norm()}")
     for i in range(window[0], window[1] + 1):
         state.tensors[i] = short_state.tensors[i - window[0]]
+    print(f"DEBUG: State canonical form after tensor replacement: {state.check_canonical_form()}")
     print(f"DEBUG: State norm after tensor replacement: {state.norm()}")
 
     # get local noise model from global noise model
@@ -292,15 +296,12 @@ def apply_noisy_two_qubit_gate(state: MPS, noise_model: NoiseModel | None, node:
 
         # print(f"DEBUG: Short state norm before dissipation: {short_state.norm()}")
         # apply noise to qubits affected by the gate
-        copy_state = copy.deepcopy(state)
-        for i in reversed(range(state.length)):
-            copy_state.shift_orthogonality_center_left(i)
-        print(f"DEBUG: TDVP State norm before dissipation: {copy_state.norm(0)}")
-        print(f"DEBUG: canonical form of TDVP state: {copy_state.check_canonical_form()}")
-        print(f"DEBUG: TDVP state norm: {copy_state.norm(0)}")
 
-        for i in range(first_site):
-            state.shift_orthogonality_center_right(i)
+        current_ortho_center = state.check_canonical_form()
+        for i in reversed(range(first_site,current_ortho_center[0] + 1)):
+            state.shift_orthogonality_center_left(i)
+        print(f"DEBUG: State canonical form after shift must be first_site: {state.check_canonical_form()}")
+        print(f"DEBUG: first_site: {first_site}, last_site: {last_site}")
         affected_state = MPS(length=2, tensors=state.tensors[first_site : last_site + 1])
 
         affected_state_copy = copy.deepcopy(affected_state)
