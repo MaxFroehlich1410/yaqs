@@ -77,6 +77,7 @@ def _run_strong_sim(
         observable.initialize(sim_params)
 
     args = [(i, initial_state, noise_model, sim_params, operator) for i in range(sim_params.num_traj)]
+
     if parallel and sim_params.num_traj > 1:
         max_workers = max(1, multiprocessing.cpu_count() - 1)
         with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
@@ -91,6 +92,9 @@ def _run_strong_sim(
                     pbar.update(1)
     else:
         for i, arg in enumerate(args):
+            print("-"*80)
+            print(f"Start trajectory {i} of {sim_params.num_traj}")
+            print("-"*80)
             result = backend(arg)
             for obs_index, observable in enumerate(sim_params.sorted_observables):
                 assert observable.trajectories is not None, "Trajectories should have been initialized"

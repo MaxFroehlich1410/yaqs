@@ -72,7 +72,9 @@ def step_through(state: MPS, hamiltonian: MPO, noise_model: NoiseModel | None, s
         local_dynamic_tdvp(state, hamiltonian, sim_params)
     elif sim_params.evolution_mode == EvolutionMode.BUG:
         bug(state, hamiltonian, sim_params)
+    print(f"DEBUG: State canonical form before dissipation in ANALOG TJM: {state.check_canonical_form()}")
     apply_dissipation(state, noise_model, sim_params.dt, sim_params)
+    print(f"DEBUG: State canonical form after dissipation, before stochastic process, in ANALOG TJM: {state.check_canonical_form()}")
     return stochastic_process(state, noise_model, sim_params.dt, sim_params)
 
 
@@ -175,6 +177,7 @@ def physics_tjm_2(args: tuple[int, MPS, NoiseModel | None, PhysicsSimParams, MPO
 
     for j, _ in enumerate(sim_params.times[2:], start=2):
         phi = step_through(phi, hamiltonian, noise_model, sim_params)
+        print(f"DEBUG: State canonical form after step_through, after stochastic process in ANALOG TJM: {phi.check_canonical_form()}")
         if sim_params.sample_timesteps or j == len(sim_params.times) - 1:
             sample(phi, hamiltonian, noise_model, sim_params, results, j)
 
