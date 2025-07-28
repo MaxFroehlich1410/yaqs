@@ -22,6 +22,8 @@ import numpy as np
 import opt_einsum as oe
 
 from ..methods.tdvp import merge_mps_tensors, split_mps_tensor
+from ..data_structures.simulation_parameters import PhysicsSimParams, StrongSimParams, WeakSimParams
+
 
 if TYPE_CHECKING:
     from typing import Any
@@ -30,7 +32,6 @@ if TYPE_CHECKING:
 
     from ..data_structures.networks import MPS
     from ..data_structures.noise_model import NoiseModel
-    from ..data_structures.simulation_parameters import PhysicsSimParams, StrongSimParams, WeakSimParams
 
 
 def calculate_stochastic_factor(state: MPS) -> NDArray[np.float64]:
@@ -184,27 +185,34 @@ def stochastic_process(
         ValueError: If a 2-site jump is not nearest-neighbor, or if the jump operator does not act on 1 or 2 sites.
     """
     print(f"DEBUG: Affected state canonical form before stochastic process: {state.check_canonical_form()}")
-    print(f"DEBUG: Affected state norm before stochastic process site 0: {state.norm(0)}")
-    print(f"DEBUG: Affected state norm before stochastic process site 1: {state.norm(1)}")
+    copy_state1 = copy.deepcopy(state)
+    copy_state1.set_canonical_form(0)
+    print(f"DEBUG: Affected state norm before stochastic process {copy_state1.norm(0)}")
+
     dp = calculate_stochastic_factor(state)
     print(f"DEBUG: Stochastic factor: {dp}")
     rng = np.random.default_rng()
-    print(f"DEBUG: Random value: {rng.random()}")
-    if noise_model is None or rng.random() >= dp:
+    random_val = rng.random()
+    print(f"DEBUG: Random value: {random_val}")
+    if noise_model is None or random_val >= dp:
         # No jump occurs; shift the state to canonical form at site 0.
         print(f"DEBUG: No jump occurs - only normalizing")
-        state.shift_orthogonality_center_left(0)
-        print(f"DEBUG: Affected state canonical form after stochastic process: {state.check_canonical_form()}")
-        print(f"DEBUG: Affected state norm after stochastic process site 0: {state.norm(0)}")
-        print(f"DEBUG: Affected state norm after stochastic process site 1: {state.norm(1)}")
-        return state
-
+        if isinstance(sim_params, PhysicsSimParams):
+            state.shift_orthogonality_center_left(0)
+            return state
+        else:
+            state.normalize("B", decomposition="QR")
+            print(f"DEBUG: Affected state canonical form after stochastic process: {state.check_canonical_form()}")
+            print(f"DEBUG: Affected state norm after stochastic process: {state.norm(0)}")
+            return state
+    print(f"DEBUG: Jump occurs! Random value: {random_val}, stochastic factor: {dp}")
     # A jump occurs: create the probability distribution and select a jump operator.
     jump_dict = create_probability_distribution(state, noise_model, dt, sim_params)
     choices = list(range(len(jump_dict["probabilities"])))
     choice = rng.choice(choices, p=jump_dict["probabilities"])
     jump_op = jump_dict["jumps"][choice]
     sites = jump_dict["sites"][choice]
+    print(f"DEBUG: Selected jump {choice} on sites {sites}")
 
     if len(sites) == 1:
         # 1-site jump

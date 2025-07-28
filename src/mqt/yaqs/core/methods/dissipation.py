@@ -48,8 +48,10 @@ def apply_dissipation(
     MPS tensors and shifting the orthogonality center as needed.
     """
     print(f"DEBUG: apply_dissipation called with dt={dt}")
-    print(f"DEBUG: State norm before dissipation site 0: {state.norm(0)}")
-    print(f"DEBUG: State norm before dissipation site 1: {state.norm(1)}")
+    state_copy = copy.deepcopy(state)
+    state_copy.set_canonical_form(0)
+    print(f"DEBUG: affedted state norm before dissipation: {state_copy.norm(0)}")
+
     
     if noise_model is None or sim_params is None or all(proc["strength"] == 0 for proc in noise_model.processes):
         print("DEBUG: No noise or zero strength - only normalizing")
@@ -68,9 +70,6 @@ def apply_dissipation(
             two_site_on_bond[bond].append(process)
     
     print(f"DEBUG: Two-site processes by bond: {dict(two_site_on_bond)}")
-
-    state_copy = copy.deepcopy(state)
-    print(f"DEBUG: Canonical form in apply_dissipation: {state_copy.check_canonical_form()}")
 
     for i in reversed(range(n_sites)):
         print(f"DEBUG: Processing site {i} in dissipation sweep")
@@ -116,8 +115,9 @@ def apply_dissipation(
         if i != 0:
             state.shift_orthogonality_center_left(current_orthogonality_center=i, decomposition="SVD")
     
-    print(f"DEBUG: State norm after dissipation site 0: {state.norm(0)}")
-    print(f"DEBUG: State norm after dissipation site 1: {state.norm(1)}")
+    state_copy = copy.deepcopy(state)
+    state_copy.set_canonical_form(0)
+    print(f"DEBUG: State norm after dissipation: {state_copy.norm(0)}")
 
 
 

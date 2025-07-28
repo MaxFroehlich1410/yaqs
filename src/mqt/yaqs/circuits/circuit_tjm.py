@@ -157,6 +157,12 @@ def apply_window(state: MPS, mpo: MPO | None, first_site: int, last_site: int, w
     Returns:
         tuple[MPS, MPO, list[int]]: A tuple containing the shortened MPS, the shortened MPO, and the window indices.
     """
+    print("-"*80)
+    print(f"DEBUG: apply_window called")
+    print(f"DEBUG: first_site: {first_site}, last_site: {last_site}, window_size: {window_size}")
+    print(f"DEBUG: state canonical form before apply_window: {state.check_canonical_form()}")
+    print(f"DEBUG: state norm before apply_window site 0: {state.norm(0)}")
+    print("-"*80)
     # Define a window for a local update.
     window = [first_site - window_size, last_site + window_size]
     window[0] = max(window[0], 0)
@@ -165,9 +171,7 @@ def apply_window(state: MPS, mpo: MPO | None, first_site: int, last_site: int, w
     # Shift the orthogonality center for sites before the window.
     print(f"DEBUG: Window: {window}")
     print(f"DEBUG: State length: {state.length}")
-    print(f"DEBUG: window[0]: {window[0]}")
-    print(f"DEBUG: state norm before shift: {state.norm(0)}")
-    print(f"DEBUG: State canonical form before shift: {state.check_canonical_form()}")
+    print(f"DEBUG: window[0], window[1]: {window[0]}, {window[1]}")
     for i in range(window[0]):
         state.shift_orthogonality_center_right(i)
     print(f"DEBUG: State canonical form after shift: {state.check_canonical_form()}")
@@ -179,7 +183,12 @@ def apply_window(state: MPS, mpo: MPO | None, first_site: int, last_site: int, w
     assert window[1] - window[0] + 1 > 1, "MPS cannot be length 1"
     short_state = MPS(length=window[1] - window[0] + 1, tensors=state.tensors[window[0] : window[1] + 1])
     print(f"DEBUG: short state canonical form: {short_state.check_canonical_form()}")
-    print(f"DEBUG: short state norm after shift: {short_state.norm(0)}")
+    copy_state = copy.deepcopy(state)
+    copy_state.set_canonical_form(0)
+    print(f"DEBUG: copy state norm after set canonical form 0: {copy_state.norm(0)}")
+    print("-"*80)
+    print("apply_window done")
+    print("-"*80)
     return short_state, short_mpo, window
 
 
@@ -238,8 +247,9 @@ def create_local_noise_model(noise_model: NoiseModel, first_site: int, last_site
     # print(f"DEBUG: Gate sites: {gate_sites}")
     # print(f"DEBUG: Neighbor pairs: {neighbor_pairs}")
     # print(f"DEBUG: Gate acts on sites: {first_site} to {last_site}")
+    noise_model_copy = copy.deepcopy(noise_model)
 
-    for process in noise_model.processes:
+    for process in noise_model_copy.processes:
         # print(f"DEBUG: Checking process {process['sites']} against gate_sites: {gate_sites}")
         # print(f"DEBUG: Checking process {process['sites']} against neighbor_pairs: {neighbor_pairs}")
         if process["sites"] in neighbor_pairs:
@@ -423,7 +433,8 @@ def circuit_tjm(
                 print("-"*80)
                 print(f"DEBUG: state canonical form before noiseless two-qubit gate: {state.check_canonical_form()}")
                 first_site, last_site = apply_two_qubit_gate(state, node, sim_params)
-                print(f"DEBUG: state canonical form after noiseless two-qubit gate: {state.check_canonical_form()}")
+                print(f"DEBUG: state canonical form after apply_two_qubit_gate: {state.check_canonical_form()}")
+                print(f"DEBUG: first_site: {first_site}, last_site: {last_site}")
                 
                 if noise_model is None or all(proc["strength"] == 0 for proc in noise_model.processes):
                     # Normalizes state
@@ -431,7 +442,18 @@ def circuit_tjm(
                 else:
                     state.normalize(form="B", decomposition="QR")
                     #  print(f"DEBUG: Applying noisy two-qubit gate")
+                    print(f"DEBUG: noise model: {noise_model}")
+                    print(f"DEBUG: noise model processes: {noise_model.processes}")
                     local_noise_model = create_local_noise_model(noise_model, first_site, last_site)
+                    for process in local_noise_model.processes:
+                        if process["sites"] == [first_site, last_site]:
+                            process["sites"] = [0, 1]
+                        elif process["sites"] == [first_site]:
+                            process["sites"] = [0]
+                        elif process["sites"] == [last_site]:
+                            process["sites"] = [1]
+                    print(f"DEBUG: local noise model: {local_noise_model}")
+                    print(f"DEBUG: local noise model processes: {local_noise_model.processes}")
                     affected_state, _, window = apply_window(state, None, first_site, last_site, window_size=0)
                     print(f"DEBUG: affected state canonical form after apply_window: {affected_state.check_canonical_form()}")
                     print(f"DEBUG: full state canonical form after apply_window: {state.check_canonical_form()}")
@@ -453,7 +475,8 @@ def circuit_tjm(
                     for i in range(window[0], window[1] + 1):
                         state.tensors[i] = affected_state.tensors[i - window[0]]
                     state.normalize(form="B", decomposition="QR")
-                    print(f"DEBUG: 555 State norm before noisy two-qubit gate, only correct if ortho center is 0: {state.norm(0)}")
+                    print(f"DEBUG: State canonical form after normalization: {state.check_canonical_form()}")
+                    print(f"DEBUG: State norm after gate+dissipation+jump: {state.norm(0)}")
 
                 dag.remove_op_node(node)
 

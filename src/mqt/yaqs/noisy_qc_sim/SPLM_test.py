@@ -60,7 +60,9 @@ if __name__ == "__main__":
                 "strength": noise_rate[1]
             })
         noise_model_yaqs = NoiseModel(processes)
-        sim_params = StrongSimParams(observables=[Observable(gate=Z(), sites=[i]) for i in range(num_qubits)], num_traj=10, max_bond_dim=4, threshold=1e-14, window_size=0, get_state=False)
+        print(f"DEBUG: INSIDE SPLM_TEST noise model yaqs: {noise_model_yaqs}")
+        print(f"DEBUG: INSIDE SPLM_TEST noise model yaqs processes: {noise_model_yaqs.processes}")
+        sim_params = StrongSimParams(observables=[Observable(gate=Z(), sites=[i]) for i in range(num_qubits)], num_traj=1000, max_bond_dim=4, threshold=1e-14, window_size=0, get_state=False)
         initial_mps = MPS(num_qubits, state = "zeros", pad=2)
         simulator.run(initial_mps, qc, sim_params, noise_model_yaqs, parallel = False)
 
