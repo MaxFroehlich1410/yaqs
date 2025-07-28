@@ -156,7 +156,6 @@ def create_probability_distribution(
     # print('dp_m_list', dp_m_list)
     return jump_dict
 
-
 def stochastic_process(
     state: MPS,
     noise_model: NoiseModel | None,
@@ -173,9 +172,9 @@ def stochastic_process(
     with appropriate tensor contractions and normalization to ensure physical validity.
 
     Args:
-        state (MPS): The current Matrix Product State, left-canonical at site 0.
-        noise_model (NoiseModel | None): The noise model, or None for no jumps.
-        dt (float): The time step for the evolution.
+        state: The current Matrix Product State, left-canonical at site 0.
+        noise_model: The noise model, or None for no jumps.
+        dt: The time step for the evolution.
         sim_params: Simulation parameters (for splitting tensors, required for 2-site jumps).
 
     Returns:
@@ -184,44 +183,33 @@ def stochastic_process(
     Raises:
         ValueError: If a 2-site jump is not nearest-neighbor, or if the jump operator does not act on 1 or 2 sites.
     """
-    print(f"DEBUG: stochastic_process called with dt={dt}")
-    state_copy = copy.deepcopy(state)
-    state_copy.shift_orthogonality_center_left(1)
-    print(f"DEBUG: State norm before stochastic process: {state_copy.norm(0)}")
-    
-    dp = calculate_stochastic_factor(state_copy)
-    print(f"DEBUG: Stochastic factor (jump probability): {dp}")
-    
+    print(f"DEBUG: Affected state canonical form before stochastic process: {state.check_canonical_form()}")
+    print(f"DEBUG: Affected state norm before stochastic process site 0: {state.norm(0)}")
+    print(f"DEBUG: Affected state norm before stochastic process site 1: {state.norm(1)}")
+    dp = calculate_stochastic_factor(state)
+    print(f"DEBUG: Stochastic factor: {dp}")
     rng = np.random.default_rng()
-    random_val = rng.random()
-    print(f"DEBUG: Random value: {random_val}")
-    
-    if noise_model is None or random_val >= dp:
+    print(f"DEBUG: Random value: {rng.random()}")
+    if noise_model is None or rng.random() >= dp:
         # No jump occurs; shift the state to canonical form at site 0.
-        print("DEBUG: No jump occurs - only normalizing")
+        print(f"DEBUG: No jump occurs - only normalizing")
         state.shift_orthogonality_center_left(0)
-        print(f"DEBUG: State norm after no-jump normalization: {state.norm()}")
+        print(f"DEBUG: Affected state canonical form after stochastic process: {state.check_canonical_form()}")
+        print(f"DEBUG: Affected state norm after stochastic process site 0: {state.norm(0)}")
+        print(f"DEBUG: Affected state norm after stochastic process site 1: {state.norm(1)}")
         return state
 
     # A jump occurs: create the probability distribution and select a jump operator.
-    print("DEBUG: Jump occurs - creating probability distribution")
     jump_dict = create_probability_distribution(state, noise_model, dt, sim_params)
-    print(f"DEBUG: Number of possible jumps: {len(jump_dict['probabilities'])}")
-    print(f"DEBUG: Jump probabilities: {jump_dict['probabilities']}")
-    
     choices = list(range(len(jump_dict["probabilities"])))
     choice = rng.choice(choices, p=jump_dict["probabilities"])
-    jump_operator = jump_dict["jumps"][choice]
+    jump_op = jump_dict["jumps"][choice]
     sites = jump_dict["sites"][choice]
-    
-    print(f"DEBUG: Selected jump {choice} on sites {sites}")
-    print(f"DEBUG: Jump operator shape: {jump_operator.shape}")
 
     if len(sites) == 1:
         # 1-site jump
         site = sites[0]
-        print(f"DEBUG: Applying 1-site jump to site {site}")
-        state.tensors[site] = oe.contract("ab, bcd->acd", jump_operator, state.tensors[site])
+        state.tensors[site] = oe.contract("ab, bcd->acd", jump_op, state.tensors[site])
     elif len(sites) == 2:
         # 2-site jump: merge, apply, split
         i, j = sites
@@ -229,21 +217,19 @@ def stochastic_process(
         if j != i + 1:
             msg = f"Only nearest-neighbor 2-site jumps are supported (got sites {i}, {j})"
             raise ValueError(msg)
-        print(f"DEBUG: Applying 2-site jump to sites {i}, {j}")
         merged = merge_mps_tensors(state.tensors[i], state.tensors[j])
-        print('applying two site jump operator')
-        merged = oe.contract("ab, bcd->acd", jump_operator, merged)
+        merged = oe.contract("ab, bcd->acd", jump_op, merged)
         # For stochastic jumps, always contract singular values to the right
-        tensor_left_new, tensor_right_new = split_mps_tensor(merged, "right", sim_params, dynamic=False)
+        tensor_left_new, tensor_right_new = split_mps_tensor(
+            merged, "right", sim_params, dynamic=False
+        )
         state.tensors[i], state.tensors[j] = tensor_left_new, tensor_right_new
     else:
         msg = "Jump operator must act on 1 or 2 sites."
         raise ValueError(msg)
 
     # Normalize MPS after jump
-    print(f"DEBUG: Normalizing state after jump")
     state.normalize("B", decomposition="SVD")
-    print(f"DEBUG: State norm after jump and normalization: {state.norm()}")
     return state
 
 
@@ -262,11 +248,10 @@ def circuit_calculate_stochastic_factor(state: MPS) -> NDArray[np.float64]:
     Returns:
         NDArray[np.float64]: The calculated stochastic factor as a float.
     """
-    state_copy = copy.deepcopy(state)
-    state_copy.shift_orthogonality_center_left(1)
-    norm = state_copy.norm(0)
+    state.set_canonical_form(0)
+    print(f"DEBUG: State norm, canonical form inside circuit_calculate_stochastic_factor: {state.norm(0)}, {state.check_canonical_form()}")
 
-    return 1 - norm
+    return 1 - state.norm(0)
 
 def circuit_create_probability_distribution(
     state: MPS,
@@ -405,9 +390,9 @@ def circuit_stochastic_process(
         ValueError: If a 2-site jump is not nearest-neighbor, or if the jump operator does not act on 1 or 2 sites.
     """
     print(f"DEBUG: stochastic_process called with dt={dt}")
-    state_copy = copy.deepcopy(state)
-    state_copy.shift_orthogonality_center_left(1)
-    print(f"DEBUG: State norm before stochastic process: {state_copy.norm(0)}")
+    # state_copy = copy.deepcopy(state)
+    # state_copy.shift_orthogonality_center_left(1)
+    # print(f"DEBUG: State norm before stochastic process: {state_copy.norm(0)}")
     
     
     dp = circuit_calculate_stochastic_factor(state)
@@ -420,8 +405,12 @@ def circuit_stochastic_process(
     if noise_model is None or random_val >= dp:
         # No jump occurs; shift the state to canonical form at site 0.
         print("DEBUG: No jump occurs - only normalizing")
-        state.shift_orthogonality_center_left(0)
-        print(f"DEBUG: State norm after no-jump normalization: {state.norm()}")
+        print(f"DEBUG: State canonical form before normalization: {state.check_canonical_form()}")
+        print(f"DEBUG: State norm before normalization site 0: {state.norm(0)}")
+        state.tensors[0] = state.tensors[0] / state.norm(0)**0.5
+
+        print(f"DEBUG: AffectedState norm after no-jump normalization site 0: {state.norm(0)}")
+        print(f"DEBUG: AffectedState canonical form after no-jump normalization: {state.check_canonical_form()}")
         return state
 
     # A jump occurs: create the probability distribution and select a jump operator.

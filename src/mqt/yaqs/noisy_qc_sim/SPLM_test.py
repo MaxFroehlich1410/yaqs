@@ -23,11 +23,11 @@ if __name__ == "__main__":
     # circuit
     num_qubits = 3
     qc = QuantumCircuit(num_qubits)
-    qc.rzz(np.pi/4, 0, 1)
+    # qc.rzz(np.pi/4, 0, 1)
     qc.rzz(np.pi/4, 1, 2)
-    # qc.rzz(np.pi/4, 2, 3)
+    # qc.rzz(np.pi/4, 4, 5)
 
-    yaqs_noise_rates = [[0.0, 0.0, 0.0], [0.01, 0.01, 0.01], [0.02, 0.02, 0.02], [0.03, 0.03, 0.03], [0.04, 0.04, 0.04], [0.05, 0.05, 0.05]]
+    yaqs_noise_rates = [[0.0, 0.0, 0.0], [0.02, 0.02, 0.02], [0.04, 0.04, 0.04], [0.06, 0.06, 0.06], [0.08, 0.08, 0.08]] #, [0.1, 0.1, 0.1]] #, [0.03, 0.03, 0.03], [0.04, 0.04, 0.04], [0.05, 0.05, 0.05]]
     qiskit_results_list = []
     yaqs_results_list = []
 
@@ -60,7 +60,7 @@ if __name__ == "__main__":
                 "strength": noise_rate[1]
             })
         noise_model_yaqs = NoiseModel(processes)
-        sim_params = StrongSimParams(observables=[Observable(gate=Z(), sites=[i]) for i in range(num_qubits)], num_traj=1000, max_bond_dim=2, threshold=1e-14, window_size=0, get_state=False)
+        sim_params = StrongSimParams(observables=[Observable(gate=Z(), sites=[i]) for i in range(num_qubits)], num_traj=10, max_bond_dim=4, threshold=1e-14, window_size=0, get_state=False)
         initial_mps = MPS(num_qubits, state = "zeros", pad=2)
         simulator.run(initial_mps, qc, sim_params, noise_model_yaqs, parallel = False)
 
