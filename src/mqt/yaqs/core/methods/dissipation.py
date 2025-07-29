@@ -47,10 +47,7 @@ def apply_dissipation(
     The function iterates from right to left, updating the
     MPS tensors and shifting the orthogonality center as needed.
     """
-    print(f"DEBUG: apply_dissipation called with dt={dt}")
-    state_copy = copy.deepcopy(state)
-    state_copy.set_canonical_form(0)
-    print(f"DEBUG: affedted state norm before dissipation: {state_copy.norm(0)}")
+
 
     
     if noise_model is None or sim_params is None or all(proc["strength"] == 0 for proc in noise_model.processes):
@@ -60,7 +57,6 @@ def apply_dissipation(
         return
 
     n_sites = state.length
-    print(f"DEBUG: Applying dissipation to {n_sites} sites")
 
     # Prepare: For each bond, collect all 2-site processes acting on that bond
     two_site_on_bond = defaultdict(list)
@@ -69,23 +65,17 @@ def apply_dissipation(
             bond = tuple(sorted(process["sites"]))  # e.g. (i-1, i)
             two_site_on_bond[bond].append(process)
     
-    print(f"DEBUG: Two-site processes by bond: {dict(two_site_on_bond)}")
 
     for i in reversed(range(n_sites)):
-        print(f"DEBUG: Processing site {i} in dissipation sweep")
         
         # 1. Apply all 1-site dissipators on site i
         for process in noise_model.processes:
             if len(process["sites"]) == 1 and process["sites"][0] == i:
                 gamma = process["strength"]
                 jump_operator = process["jump_operator"]
-                print(f"DEBUG: Applying 1-site dissipator at site {i}, strength={gamma}")
                 mat = np.conj(jump_operator).T @ jump_operator
                 dissipative_operator = expm(-0.5 * dt * gamma * mat)
                 state.tensors[i] = oe.contract("ab, bcd->acd", dissipative_operator, state.tensors[i])
-                state_copy = copy.deepcopy(state)
-                print(f"DEBUG: Canonical form in apply_dissipation after 1-site dissipator: {state_copy.check_canonical_form()}")
-
 
             bond = (i - 1, i)
             processes_here = two_site_on_bond.get(bond, [])
@@ -96,7 +86,6 @@ def apply_dissipation(
             for process in processes_here:
                 gamma = process["strength"]
                 jump_operator = process["jump_operator"]
-                print(f"DEBUG: Applying 2-site dissipator at bond ({i-1}, {i}), strength={gamma}")
                 mat = np.conj(jump_operator).T @ jump_operator
                 dissipative_operator = expm(-0.5 * dt * gamma * mat)
 
@@ -107,121 +96,9 @@ def apply_dissipation(
                 # since ortho center is shifter to the left after loop
                 tensor_right, tensor_left = split_mps_tensor(merged_tensor, "right", sim_params, dynamic=False)
                 state.tensors[i - 1], state.tensors[i] = tensor_right, tensor_left
-                state_copy = copy.deepcopy(state)
-                print(f"DEBUG: Canonical form in apply_dissipation after 2-site dissipator: {state_copy.check_canonical_form()}")
 
 
         # Shift orthogonality center
         if i != 0:
             state.shift_orthogonality_center_left(current_orthogonality_center=i, decomposition="SVD")
-    
-    state_copy = copy.deepcopy(state)
-    state_copy.set_canonical_form(0)
-    print(f"DEBUG: State norm after dissipation: {state_copy.norm(0)}")
-
-
-
-
-def apply_circuit_dissipation(
-    state: MPS,
-    noise_model: NoiseModel | None,
-    dt: float,
-    global_start: int,
-    sim_params: PhysicsSimParams | StrongSimParams | WeakSimParams | None,
-) -> None:
-    """Dissipative sweep: right-to-left, compatible with left-canonical MPS. Assumes state is left-canonical at start.
-
-    This function applies dissipative evolution to an MPS state
-    by exponentiating weighted sums of jump operators derived from
-    the provided noise model. Both one-site and two-site dissipators
-    are handled, and the corresponding operators are applied to the
-    appropriate tensors via efficient tensor contractions.
-    The function iterates from right to left, updating the
-    MPS tensors and shifting the orthogonality center as needed.
-    """
-    print(f"DEBUG: apply_dissipation called with dt={dt}")
-    print(f"DEBUG: AffectedState norm before dissipation: {state.norm(0)}")
-    
-    if noise_model is None or sim_params is None or all(proc["strength"] == 0 for proc in noise_model.processes):
-        print("DEBUG: No noise or zero strength - only normalizing")
-        for i in reversed(range(state.length)):
-            state.shift_orthogonality_center_left(current_orthogonality_center=i, decomposition="QR")
-        return
-
-    n_sites = state.length
-    print(f"DEBUG: Applying dissipation to {n_sites} sites")
-
-    # Prepare: For each bond, collect all 2-site processes acting on that bond
-    two_site_on_bond = defaultdict(list)
-    for process in noise_model.processes:
-        if len(process["sites"]) == 2:
-            bond = tuple(sorted(process["sites"]))  # e.g. (i-1, i)
-            two_site_on_bond[bond].append(process)
-    
-    print(f"DEBUG: Two-site processes by bond: {dict(two_site_on_bond)}")
-
-    state_copy = copy.deepcopy(state)
-    print(f"DEBUG: Canonical form in apply_dissipation: {state_copy.check_canonical_form()}")
-
-
-    for i in reversed(range(n_sites)):
-        print(f"DEBUG: Processing site {i} in dissipation sweep")
-        
-        # 1. Apply all 1-site dissipators on site i
-        for process in noise_model.processes:
-            if len(process["sites"]) == 1 :
-                if process["sites"][0] == global_start and i ==0:
-    
-                    gamma = process["strength"]
-                    jump_operator = process["jump_operator"]
-                    print(f"DEBUG: Applying 1-site dissipator at site {i}, strength={gamma}")
-                    mat = np.conj(jump_operator).T @ jump_operator
-                    dissipative_operator = expm(-0.5 * dt * gamma * mat)
-                    state.tensors[i] = oe.contract("ab, bcd->acd", dissipative_operator, state.tensors[i])
-                    state_copy = copy.deepcopy(state)
-                    print(f"DEBUG: Canonical form in apply_dissipation after 1-site dissipator: {state_copy.check_canonical_form()}")
-
-                if process["sites"][0] == global_start + 1 and i ==1:
-    
-                    gamma = process["strength"]
-                    jump_operator = process["jump_operator"]
-                    print(f"DEBUG: Applying 1-site dissipator at site {i}, strength={gamma}")
-                    mat = np.conj(jump_operator).T @ jump_operator
-                    dissipative_operator = expm(-0.5 * dt * gamma * mat)
-                    state.tensors[i] = oe.contract("ab, bcd->acd", dissipative_operator, state.tensors[i])
-                    state_copy = copy.deepcopy(state)
-                    print(f"DEBUG: Canonical form in apply_dissipation after 1-site dissipator: {state_copy.check_canonical_form()}")
-
-
-        # 2. Apply all 2-site dissipators acting on sites (i-1, i)
-        if i != 0:
-            global_bond = (global_start, global_start + 1)
-            processes_here = two_site_on_bond.get(global_bond, [])
-
-            for process in processes_here:
-                gamma = process["strength"]
-                jump_operator = process["jump_operator"]
-                print(f"DEBUG: Applying 2-site dissipator at bond ({i-1}, {i}), strength={gamma}")
-                mat = np.conj(jump_operator).T @ jump_operator
-                dissipative_operator = expm(-0.5 * dt * gamma * mat)
-
-                merged_tensor = merge_mps_tensors(state.tensors[i - 1], state.tensors[i])
-                merged_tensor = oe.contract("ab, bcd->acd", dissipative_operator, merged_tensor)
-
-                # singular values always contracted right
-                # since ortho center is shifter to the left after loop
-                tensor_right, tensor_left = split_mps_tensor(merged_tensor, "right", sim_params, dynamic=False)
-                state.tensors[i - 1], state.tensors[i] = tensor_right, tensor_left
-                state_copy = copy.deepcopy(state)
-                print(f"DEBUG: Canonical form in apply_dissipation after 2-site dissipator: {state_copy.check_canonical_form()}")
-
-        # Shift orthogonality center
-        if i != 0:
-            state.shift_orthogonality_center_left(current_orthogonality_center=i, decomposition="SVD")
-    state_copy = copy.deepcopy(state)
-    print(f"DEBUG: Canonical form in apply_dissipation at very end: {state_copy.check_canonical_form()}")
-
-
-    print(f"DEBUG: Affected State norm after dissipation: {state.norm(0)}")
-   
 

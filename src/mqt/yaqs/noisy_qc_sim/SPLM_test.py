@@ -13,6 +13,7 @@ from mqt.yaqs.noisy_qc_sim.qiskit_noisy_sim import qiskit_noisy_simulator
 from mqt.yaqs.core.data_structures.noise_model import NoiseModel
 from mqt.yaqs.core.data_structures.simulation_parameters import StrongSimParams, Observable
 from mqt.yaqs.core.libraries.gate_library import Z
+from mqt.yaqs.core.libraries.circuit_library import create_ising_circuit
 from mqt.yaqs import simulator
 from mqt.yaqs.core.data_structures.networks import MPS
 
@@ -21,13 +22,16 @@ from mqt.yaqs.core.data_structures.networks import MPS
 if __name__ == "__main__":
 
     # circuit
-    num_qubits = 3
+    num_qubits = 4
     qc = QuantumCircuit(num_qubits)
+    qc = create_ising_circuit(num_qubits, 1.0, 0.5, 0.1, 1)
     # qc.rzz(np.pi/4, 0, 1)
-    qc.rzz(np.pi/4, 1, 2)
+    # qc.rzz(np.pi/4, 1, 2)
+    # qc.rzz(np.pi/4, 2, 3)
+    # qc.rzz(np.pi/4, 0, 1)
     # qc.rzz(np.pi/4, 4, 5)
 
-    yaqs_noise_rates = [[0.0, 0.0, 0.0], [0.02, 0.02, 0.02], [0.04, 0.04, 0.04], [0.06, 0.06, 0.06], [0.08, 0.08, 0.08]] #, [0.1, 0.1, 0.1]] #, [0.03, 0.03, 0.03], [0.04, 0.04, 0.04], [0.05, 0.05, 0.05]]
+    yaqs_noise_rates = [[0.0, 0.0, 0.0], [0.02, 0.02, 0.02] , [0.04, 0.04, 0.04], [0.06, 0.06, 0.06], [0.08, 0.08, 0.08]] #, [0.1, 0.1, 0.1]] #, [0.03, 0.03, 0.03], [0.04, 0.04, 0.04], [0.05, 0.05, 0.05]]
     qiskit_results_list = []
     yaqs_results_list = []
 
