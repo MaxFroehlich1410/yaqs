@@ -108,8 +108,16 @@ class Observable:
             self.trajectories = np.empty((sim_params.shots, 1), dtype=np.complex128)
             self.results = np.empty(1, dtype=np.float64)
         elif isinstance(sim_params, StrongSimParams):
-            self.trajectories = np.empty((sim_params.num_traj, 1), dtype=np.complex128)
-            self.results = np.empty(1, dtype=np.float64)
+            # NEW: Handle layer sampling like AnalogSimParams handles timesteps
+            if sim_params.sample_layers:
+                # Include initial state + num_layers: shape (num_traj, num_layers + 1)
+                self.trajectories = np.empty((sim_params.num_traj, sim_params.num_layers + 1), dtype=np.complex128)
+                self.results = np.empty(sim_params.num_layers + 1, dtype=np.float64)
+            else:
+                # Standard: only final result
+                self.trajectories = np.empty((sim_params.num_traj, 1), dtype=np.complex128)
+                self.results = np.empty(1, dtype=np.float64)
+            print(f"WITHIN INITIALIZE OBSERVABLE Trajectories: {self.trajectories}")
 
 
 class AnalogSimParams:
@@ -348,6 +356,12 @@ class StrongSimParams:
         The size of the window for the simulation. Default is None.
     get_state:
         If True, output MPS is returned.
+    sample_layers:
+        If True, sample layers of the basis circuit.
+    num_layers:
+        The number of layers to sample.
+    basis_circuit:
+        The basis circuit to sample layers from.
 
     Methods:
     --------
@@ -371,6 +385,9 @@ class StrongSimParams:
         threshold: float = 1e-9,
         *,
         get_state: bool = False,
+        sample_layers: bool = False,
+        num_layers: int | None = None,
+        basis_circuit: QuantumCircuit | None = None,
     ) -> None:
         """Strong circuit simulation parameters initialization.
 
@@ -404,6 +421,9 @@ class StrongSimParams:
         self.min_bond_dim = min_bond_dim
         self.threshold = threshold
         self.get_state = get_state
+        self.sample_layers = sample_layers
+        self.num_layers = num_layers
+        self.basis_circuit = basis_circuit
 
     def aggregate_trajectories(self) -> None:
         """Aggregate trajectories for result.

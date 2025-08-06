@@ -21,9 +21,10 @@ import numpy as np
 import opt_einsum as oe
 from qiskit.converters import circuit_to_dag
 
+
 from ..core.data_structures.networks import MPO, MPS
 from ..core.data_structures.noise_model import NoiseModel
-from ..core.data_structures.simulation_parameters import WeakSimParams
+from ..core.data_structures.simulation_parameters import WeakSimParams, StrongSimParams
 from ..core.methods.dissipation import apply_dissipation
 from ..core.methods.stochastic_process import stochastic_process
 from ..core.methods.tdvp import two_site_tdvp
@@ -37,6 +38,40 @@ if TYPE_CHECKING:
     from ..core.data_structures.noise_model import NoiseModel
     from ..core.data_structures.simulation_parameters import StrongSimParams
     from ..core.libraries.gate_library import BaseGate
+
+def debug_print(msg):
+    """Helper function for debug output"""
+    print(f"🔍 DEBUG: {msg}")
+
+def analyze_circuit(circuit, name):
+    """Analyze circuit structure for debugging"""
+    debug_print(f"\n=== {name} Analysis ===")
+    debug_print(f"Total instructions: {len(circuit.data)}")
+    debug_print(f"Circuit size: {circuit.size()}")
+    debug_print(f"Circuit depth: {circuit.depth()}")
+    
+    # Analyze gate types
+    gate_counts = {}
+    for instruction in circuit.data:
+        gate_name = instruction.operation.name
+        gate_counts[gate_name] = gate_counts.get(gate_name, 0) + 1
+    
+    debug_print(f"Gate breakdown: {gate_counts}")
+    
+    # Convert to DAG and analyze
+    dag = circuit_to_dag(circuit)
+    dag_gates = [n for n in dag.op_nodes() if n.op.name not in {"measure", "barrier"}]
+    debug_print(f"DAG effective gates (no measure/barrier): {len(dag_gates)}")
+    
+    # Show first few gates
+    debug_print("First 10 gates:")
+    for i, instruction in enumerate(circuit.data[:10]):
+        # Fix: Use circuit.find_bit() to get qubit indices
+        qubits = [circuit.find_bit(q).index for q in instruction.qubits]
+        debug_print(f"  {i}: {instruction.operation.name} on qubits {qubits}")
+    
+    debug_print(f"=== End {name} Analysis ===\n")
+    return len(dag_gates)
 
 
 def create_local_noise_model(noise_model: NoiseModel, first_site: int, last_site: int) -> NoiseModel:
@@ -249,73 +284,215 @@ def digital_tjm(
         are the measured observables.
         If WeakSimParams are used, the results are the measurement outcomes for each shot.
     """
-    _i, initial_state, noise_model, sim_params, circuit = args
+    trajectory_id, initial_state, noise_model, sim_params, circuit = args
         
     state = copy.deepcopy(initial_state)
 
     dag = circuit_to_dag(circuit)
 
+    # Debug print helper
+    def debug_print(msg):
+        print(f"🔧 TJM DEBUG [Traj {trajectory_id}]: {msg}")
+
+    debug_print("=== STARTING DIGITAL TJM ===")
+    debug_print(f"Circuit qubits: {circuit.num_qubits}")
+    debug_print(f"Circuit size: {circuit.size()}")
+    debug_print(f"Initial DAG nodes: {len(list(dag.op_nodes()))}")
+
+    # Check for layer sampling
+    layer_sampling = (
+        isinstance(sim_params, StrongSimParams) and 
+        getattr(sim_params, 'sample_layers', False)
+    )
+    debug_print(f"Layer sampling enabled: {layer_sampling}")
+    
+    if layer_sampling:
+        num_layers = getattr(sim_params, 'num_layers', None)
+        basis_circuit = getattr(sim_params, 'basis_circuit', None)
+        
+        debug_print(f"num_layers: {num_layers}")
+        debug_print(f"basis_circuit provided: {basis_circuit is not None}")
+        
+        if num_layers is None:
+            raise ValueError("num_layers must be provided when sample_layers=True")
+        if basis_circuit is None:
+            raise ValueError("basis_circuit must be provided when sample_layers=True")
+        
+        # Analyze basis circuit
+        basis_dag = circuit_to_dag(basis_circuit)
+        basis_gates = [n for n in basis_dag.op_nodes() if n.op.name not in {"measure", "barrier"}]
+        gates_per_layer = len(basis_gates)
+        
+        analyze_circuit(basis_circuit, "BASIS CIRCUIT")
+        
+        # Validate main circuit
+        total_gates = len([n for n in dag.op_nodes() if n.op.name not in {"measure", "barrier"}])
+        expected_total = gates_per_layer * num_layers
+        
+        debug_print(f"=== CONCATENATED CIRCUIT VALIDATION ===")
+        debug_print(f"Expected gates: {gates_per_layer} × {num_layers} = {expected_total}")
+        debug_print(f"Actual gates: {total_gates}")
+        debug_print(f"Match: {total_gates == expected_total}")
+        
+        if total_gates != expected_total:
+            debug_print(f"⚠️  WARNING: Circuit structure mismatch!")
+            # Don't raise error, just warn and continue
+        
+        # Sample initial state (layer 0) - store directly in trajectories!
+        debug_print("=== SAMPLING INITIAL STATE (Layer 0) ===")
+        temp_state = copy.deepcopy(state)
+        for obs_idx, observable in enumerate(sim_params.observables):
+            expectation = temp_state.expect(observable)
+            sim_params.observables[obs_idx].trajectories[trajectory_id, 0] = expectation
+            print(f" sim_params.observables[obs_idx].trajectories[trajectory_id, 0]: {sim_params.observables[obs_idx].trajectories[trajectory_id, 0]}")
+            debug_print(f"Initial obs[{obs_idx}] = {expectation:.6f}")
+            debug_print(f"trajectories obsevable: {sim_params.observables[obs_idx].trajectories}")
+            # debug_print(f"trajectories sorted_observable: {sim_params.sorted_observables[obs_idx].trajectories}")
+            # debug_print("test")
+        
+        current_layer = 1
+        gates_processed_in_current_layer = 0
+        debug_print(f"Layer sampling initialized: targeting {num_layers} layers")
 
     layer_count = 0
+    total_gates_processed = 0
+    
     while dag.op_nodes():
         layer_count += 1
+        debug_print(f"\n--- Processing DAG Layer {layer_count} ---")
 
         single_qubit_nodes, even_nodes, odd_nodes = process_layer(dag)
+        
+        debug_print(f"Layer gates - Single: {len(single_qubit_nodes)}, Even: {len(even_nodes)}, Odd: {len(odd_nodes)}")
 
-        for node in single_qubit_nodes:
+        # Process single-qubit gates
+        debug_print("Processing single-qubit gates:")
+        for i, node in enumerate(single_qubit_nodes):
+            qubits = [dag.qubits.index(q) for q in node.qargs]  # Use DAG's qubit list to find indices
+            debug_print(f"  Single[{i}]: {node.op.name} on qubit {qubits}")
+            
             apply_single_qubit_gate(state, node)
             dag.remove_op_node(node)
+            total_gates_processed += 1
+            
+            if layer_sampling:
+                gates_processed_in_current_layer += 1
+                debug_print(f"    Layer progress: {gates_processed_in_current_layer}/{gates_per_layer}")
+                
+                # Check if we completed a layer
+                if gates_processed_in_current_layer == gates_per_layer and current_layer <= num_layers:
+                    debug_print(f"🎯 LAYER 222 {current_layer} COMPLETED! Sampling observables...")
+                    temp_state = copy.deepcopy(state)
+                    for obs_idx, observable in enumerate(sim_params.observables):
+                        expectation = temp_state.expect(observable)
+                        sim_params.observables[obs_idx].trajectories[trajectory_id, current_layer] = expectation
+                        debug_print(f" trajectory 111: {sim_params.observables[obs_idx].trajectories}")
+                        debug_print(f"Layer {current_layer} obs[{obs_idx}] = {expectation}")
+                    
+                    current_layer += 1
+                    gates_processed_in_current_layer = 0
+                    debug_print(f"Reset for next layer. Current layer now: {current_layer}")
 
         # Process two-qubit gates in even/odd sweeps.
         for group_name, group in [("even", even_nodes), ("odd", odd_nodes)]:
-            for node in group:
+            debug_print(f"Processing {group_name} two-qubit gates:")
+            for i, node in enumerate(group):
+                qubits = [dag.qubits.index(q) for q in node.qargs]  # Use DAG's qubit list to find indices
+                debug_print(f"  {group_name}[{i}]: {node.op.name} on qubits {qubits}")
+                
                 first_site, last_site = apply_two_qubit_gate(state, node, sim_params)
                 
                 if noise_model is None or all(proc["strength"] == 0 for proc in noise_model.processes):
                     # Normalizes state
+                    debug_print("    No noise - just normalizing")
                     state.normalize(form="B", decomposition="QR")
                 else:
+                    debug_print(f"    Applying noise model on sites {first_site}-{last_site}")
                     state.normalize(form="B", decomposition="QR")
 
                     local_noise_model = create_local_noise_model(noise_model, first_site, last_site)
+                    debug_print(f"    Local noise processes: {len(local_noise_model.processes)}")
 
                     apply_dissipation(state, local_noise_model, dt=1, sim_params=sim_params)
+                    debug_print("    Applied dissipation")
+                    debug_print(f"    State norm after dissipation: {state.norm()}")
 
                     state = stochastic_process(state, local_noise_model, dt=1, sim_params=sim_params)
+                    debug_print("    Applied stochastic process")
 
                     state.normalize(form="B", decomposition="QR")
 
                 dag.remove_op_node(node)
+                total_gates_processed += 1
+                
+                if layer_sampling:
+                    gates_processed_in_current_layer += 1
+                    debug_print(f"    Layer progress: {gates_processed_in_current_layer}/{gates_per_layer}")
+                    
+                    # Check if we completed a layer
+                    if gates_processed_in_current_layer == gates_per_layer and current_layer <= num_layers:
+                        debug_print(f"🎯 LAYER 111 {current_layer} COMPLETED! Sampling observables...")
+                        temp_state = copy.deepcopy(state)
+                        for obs_idx, observable in enumerate(sim_params.observables):
+                            expectation = temp_state.expect(observable)
+                            sim_params.observables[obs_idx].trajectories[trajectory_id, current_layer] = expectation
+                            debug_print(f"Layer {current_layer} obs[{obs_idx}] = {expectation:.6f}")
+                            debug_print(f" trajectory 222: {sim_params.observables[obs_idx].trajectories}")
+                            debug_print(f"Layer {current_layer} obs[{obs_idx}] = {expectation:.6f}")
+                        
+                        current_layer += 1
+                        gates_processed_in_current_layer = 0
+                        debug_print(f"Reset for next layer. Current layer now: {current_layer}")
 
+    debug_print(f"\n=== SIMULATION COMPLETE ===")
+    debug_print(f"Total DAG layers processed: {layer_count}")
+    debug_print(f"Total gates processed: {total_gates_processed}")
+    if layer_sampling:
+        debug_print(f"Final layer: {current_layer - 1}, Gates in partial layer: {gates_processed_in_current_layer}")
 
     if isinstance(sim_params, WeakSimParams):
         if not noise_model or all(proc["strength"] == 0 for proc in noise_model.processes):
             # All shots can be done at once in noise-free model
             if sim_params.get_state:
                 sim_params.output_state = state
+            debug_print("Returning measurement shots")
             return state.measure_shots(sim_params.shots)
         # Each shot is an individual trajectory
+        debug_print("Returning single shot measurement")
         return state.measure_shots(shots=1)
     
     # StrongSimParams
-    results = np.zeros((len(sim_params.observables), 1))
-    temp_state = copy.deepcopy(state)
-    if sim_params.get_state:
-        sim_params.output_state = state
+    if layer_sampling:
+        # For layer sampling, we've already stored everything in trajectories
+        # Return the final layer results for compatibility
+        debug_print("Returning layer sampling results")
+        final_results = np.zeros((len(sim_params.observables), 1))
+        for obs_idx in range(len(sim_params.observables)):
+            final_results[obs_idx, 0] = sim_params.observables[obs_idx].trajectories[trajectory_id, -1]
+            debug_print(f"Final result obs[{obs_idx}] = {final_results[obs_idx, 0]:.6f}")
+        return final_results
+    else:
+        # Standard StrongSimParams logic (unchanged)
+        debug_print("Standard observable measurement")
+        results = np.zeros((len(sim_params.observables), 1))
+        temp_state = copy.deepcopy(state)
+        if sim_params.get_state:
+            sim_params.output_state = state
 
-    last_site = 0
-    for obs_index, observable in enumerate(sim_params.sorted_observables):
-        if isinstance(observable.sites, list):
-            idx = observable.sites[0]
-        elif isinstance(observable.sites, int):
-            idx = observable.sites
+        last_site = 0
+        for obs_index, observable in enumerate(sim_params.observables):
+            if isinstance(observable.sites, list):
+                idx = observable.sites[0]
+            elif isinstance(observable.sites, int):
+                idx = observable.sites
 
-        if idx > last_site:
-            for site in range(last_site, idx):
-                temp_state.shift_orthogonality_center_right(site)
-            last_site = idx
-        
-        expectation = temp_state.expect(observable)
-        results[obs_index, 0] = expectation
+            if idx > last_site:
+                for site in range(last_site, idx):
+                    temp_state.shift_orthogonality_center_right(site)
+                last_site = idx
+            
+            expectation = temp_state.expect(observable)
+            results[obs_index, 0] = expectation
+            debug_print(f"Standard obs[{obs_index}] = {expectation:.6f}")
 
-    return results
+        return results

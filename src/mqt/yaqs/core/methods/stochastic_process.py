@@ -183,11 +183,13 @@ def stochastic_process(
         return state
 
     # A jump occurs: create the probability distribution and select a jump operator.
+    print("DEBUG: Jump occurred")
     jump_dict = create_probability_distribution(state, noise_model, dt, sim_params)
     choices = list(range(len(jump_dict["probabilities"])))
     choice = rng.choice(choices, p=jump_dict["probabilities"])
     jump_op = jump_dict["jumps"][choice]
     sites = jump_dict["sites"][choice]
+    print(f"DEBUG: Jump operator and sites selected: {jump_op}, {sites}")
 
     if len(sites) == 1:
         # 1-site jump

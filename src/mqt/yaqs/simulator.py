@@ -94,29 +94,62 @@ def _run_strong_sim(
     else:
         assert not sim_params.get_state, "Cannot return state in noisy circuit simulation due to stochastics."
 
-    for observable in sim_params.sorted_observables:
+    def debug_print(msg):
+        print(f"📡 SIMULATOR DEBUG: {msg}")
+
+    debug_print("=== STARTING STRONG SIMULATION ===")
+    debug_print(f"Number of trajectories: {sim_params.num_traj}")
+    debug_print(f"Parallel execution: {parallel}")
+    debug_print(f"Layer sampling: {getattr(sim_params, 'sample_layers', False)}")
+
+    if noise_model is None or all(proc["strength"] == 0 for proc in noise_model.processes):
+        debug_print("No noise model or all noise strengths are zero, setting num_traj to 1")
+        sim_params.num_traj = 1
+    else:
+        debug_print(f"Noise model active with {len(noise_model.processes)} processes")
+        assert not sim_params.get_state, "Cannot return state in noisy circuit simulation due to stochastics."
+
+    debug_print("Initializing observables...")
+    for i, observable in enumerate(sim_params.sorted_observables):
         observable.initialize(sim_params)
+        debug_print(f"Observable {i}: {observable.gate.name} on sites {observable.sites}")
 
     args = [(i, initial_state, noise_model, sim_params, operator) for i in range(sim_params.num_traj)]
+    
     if parallel and sim_params.num_traj > 1:
+        debug_print(f"Starting parallel execution with {sim_params.num_traj} trajectories")
         max_workers = max(1, available_cpus() - 1)
+        debug_print(f"Using {max_workers} worker processes")
+        
         with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
             futures = {executor.submit(backend, arg): arg[0] for arg in args}
             with tqdm(total=sim_params.num_traj, desc="Running trajectories", ncols=80) as pbar:
                 for future in concurrent.futures.as_completed(futures):
                     i = futures[future]
                     result = future.result()
+                    debug_print(f"Trajectory {i} completed")
                     for obs_index, observable in enumerate(sim_params.sorted_observables):
                         assert observable.trajectories is not None, "Trajectories should have been initialized"
                         observable.trajectories[i] = result[obs_index]
                     pbar.update(1)
     else:
+        debug_print("Running trajectories sequentially")
         for i, arg in enumerate(args):
+            debug_print(f"Starting trajectory {i}")
+            # print(f"arg: {arg}")
             result = backend(arg)
+            debug_print(f"Trajectory {i} completed")
             for obs_index, observable in enumerate(sim_params.sorted_observables):
                 assert observable.trajectories is not None, "Trajectories should have been initialized"
                 observable.trajectories[i] = result[obs_index]
+    
+    debug_print("Aggregating trajectories...")
     sim_params.aggregate_trajectories()
+    
+    debug_print("=== STRONG SIMULATION COMPLETE ===")
+    if getattr(sim_params, 'sample_layers', False):
+        debug_print(f"Layer sampling results - Observable 0 shape: {sim_params.observables[0].results.shape}")
+        debug_print(f"Expected shape: ({getattr(sim_params, 'num_layers', 0) + 1},)")
 
 
 def _run_weak_sim(
