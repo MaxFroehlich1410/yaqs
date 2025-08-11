@@ -298,6 +298,7 @@ def digital_tjm(
     layer_count = 0
     canonical_form_lost = False
     while dag.op_nodes():
+        # print(f"DAG: {dag.op_nodes()}")
         
 
         single_qubit_nodes, even_nodes, odd_nodes, measure_barriers = process_layer(dag)

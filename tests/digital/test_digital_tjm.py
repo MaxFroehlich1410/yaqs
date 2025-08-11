@@ -411,22 +411,23 @@ def test_noisy_digital_tjm_matches_reference() -> None:
     both with strength 0.01. We compare Z-expectations on sites 0,1,2 over layers 0..5.
     """
     num_qubits = 3
-    # num_layers = 5  # compare layers 0..5 (including initial)
     noise_factor = 0.01
     num_traj = 1000  # Monte Carlo trajectories
 
     # Hardcoded Qiskit reference results (rows: qubit 0,1,2)
     reference = np.array([
-        [1.0, 0.9607894391523233, 0.9231163463866354, 0.8869204367171571, 0.8521437889662108, 0.8187307530779814],
-        [1.0, 0.9231163463866359, 0.8521437889662113, 0.7866278610665535, 0.726149037073691, 0.6703200460356394],
-        [1.0, 0.9607894391523233, 0.9231163463866354, 0.8869204367171571, 0.8521437889662108, 0.8187307530779814],
+        [1.0, 0.9231163463866355, 0.8521437889662111, 0.7866278610665532, 0.7261490370736906, 0.670320046035639], 
+        [1.0, 0.8521437889662115, 0.7261490370736912, 0.6187833918061411, 0.5272924240430489, 0.44932896411722184], 
+        [1.0, 0.9231163463866355, 0.8521437889662111, 0.7866278610665532, 0.7261490370736906, 0.670320046035639]
     ])
 
     # YAQS noise model: bitflip on each site and crosstalk_xx on neighbors
-    processes = [{"name": "pauli_x", "sites": [i], "strength": noise_factor} for i in range(num_qubits)] + [
-        {"name": "crosstalk_xx", "sites": [i, i + 1], "strength": noise_factor} for i in range(num_qubits - 1)
-    ]
-    noise_model = NoiseModel(processes)
+    noise_model = NoiseModel(
+        [{"name": "pauli_x", "sites": [i], "strength": noise_factor} for i in range(num_qubits)]
+          + [{"name": "crosstalk_xx", "sites": [i, i+1], "strength": noise_factor} for i in range(num_qubits-1)]
+          + [{"name": "crosstalk_yy", "sites": [i, i+1], "strength": noise_factor} for i in range(num_qubits-1)]
+          + [{"name": "pauli_y", "sites": [i], "strength": noise_factor} for i in range(num_qubits)]
+          )
 
     qc = QuantumCircuit(num_qubits)
 
@@ -446,24 +447,17 @@ def test_noisy_digital_tjm_matches_reference() -> None:
     qc.rzz(0.5, 1, 2)
 
     observables = [Observable(Z(), i) for i in range(num_qubits)]
-    sim_params = StrongSimParams(observables, num_traj=num_traj)
+    sim_params = StrongSimParams(observables=observables, num_traj = num_traj, sample_layers = True, num_mid_measurements = 4)
     state = MPS(num_qubits, state="zeros", pad=2)
     simulator.run(state, qc, sim_params, noise_model, parallel=False)
-  
 
-    # Collect TJM results per qubit across layers
-    tjm_results = np.zeros_like(reference)
-    for k in range(6):
-        for q in range(num_qubits):
-            # results is shape (1,) for StrongSim without layer sampling
-            res_arr = sim_params.observables[q].results
-            assert res_arr is not None
-            tjm_results[q, k] = float(np.real(res_arr[0]))
+    tjm_results = np.array([sim_params.observables[i].results.real[:6] for i in range(num_qubits)])
 
     # Compare within tolerance
     tol = 0.1
     diff = np.abs(tjm_results - reference)
     assert np.all(diff <= tol), f"Noisy circuit TJM mismatch. max|diff|={diff.max():.4f} > {tol}"
+
 
 
 def test_no_mid_measurements_results_have_two_columns() -> None:

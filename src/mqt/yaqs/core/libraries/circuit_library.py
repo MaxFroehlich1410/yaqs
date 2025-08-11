@@ -75,9 +75,6 @@ def create_ising_circuit(
         if periodic and L > 1:
             circ.rzz(beta, qubit1=0, qubit2=L - 1)
             circ.barrier()
-        if i != timesteps - 1:
-            circ.barrier(label="MID-MEASUREMENT")
-
 
     return circ
 
