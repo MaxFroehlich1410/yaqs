@@ -97,11 +97,17 @@ def create_probability_distribution(
             if len(process["sites"]) == 1 and process["sites"][0] == site:
                 gamma = process["strength"]
                 jump_op = process["matrix"]
-
-                jumped_state = copy.deepcopy(state)
-                jumped_state.tensors[site] = oe.contract("ab, bcd->acd", jump_op, state.tensors[site])
-                dp_m = dt * gamma * jumped_state.norm(site)
-                dp_m_list.append(float(dp_m.real))
+                if is_pauli(process):
+                    dp_m = dt * gamma 
+                    dp_m_list.append(float(dp_m.real))
+                else:
+                
+                    jumped_state = copy.deepcopy(state)
+                    jumped_state.tensors[site] = oe.contract("ab, bcd->acd", jump_op, state.tensors[site])
+                    print(f"norm state 1-site: {state.norm(site)}")
+                    dp_m = dt * gamma * jumped_state.norm(site)
+                    # dp_m = dt * gamma
+                    dp_m_list.append(float(dp_m.real))
 
         # --- 2-site jumps starting at [site, site+1] ---
         if site < state.length - 1:
@@ -109,7 +115,9 @@ def create_probability_distribution(
                 if len(process["sites"]) == 2 and process["sites"][0] == site:
                     if is_pauli(process):
                         gamma = process["strength"]
-                        dp_m = dt * gamma * state.norm(site)
+                        print(f"norm state pauli 2-site: {state.norm(site)}")
+                        # dp_m = dt * gamma * state.norm(site)
+                        dp_m = dt * gamma
                         dp_m_list.append(float(dp_m.real))
 
                     elif process["sites"][1] == site + 1:
@@ -123,6 +131,7 @@ def create_probability_distribution(
                         # apply the 2-site jump operator
                         merged = oe.contract("ab, bcd->acd", jump_op, merged)
                         dp_m = dt * gamma * jumped_state.norm(site)
+                        # dp_m = dt * gamma
                         # split the tensor (always contract singular values right for probabilities)
                         tensor_left_new, tensor_right_new = split_mps_tensor(
                             merged,
@@ -138,11 +147,13 @@ def create_probability_distribution(
 
     # Normalize the probabilities
     dp: float = float(np.sum(dp_m_list))
+    print(f"probabilities: {[val / dp for val in dp_m_list]}")
     return [val / dp for val in dp_m_list]
 
 
 def stochastic_process(
     state: MPS,
+    state_notevolved: MPS,
     noise_model: NoiseModel | None,
     dt: float,
     sim_params: AnalogSimParams | StrongSimParams | WeakSimParams,
@@ -176,7 +187,7 @@ def stochastic_process(
         return state
 
     # A jump occurs: create the probability distribution and select a jump operator.
-    probabilities = create_probability_distribution(state, noise_model, dt, sim_params)
+    probabilities = create_probability_distribution(state_notevolved, noise_model, dt, sim_params)
 
     if len(probabilities) == 0:
         # No applicable processes, just normalize and return
@@ -196,7 +207,7 @@ def stochastic_process(
         # 1-site jump
         site = sites[0]
         jump_op = chosen_process["matrix"]
-        state.tensors[site] = oe.contract("ab, bcd->acd", jump_op, state.tensors[site])
+        state_notevolved.tensors[site] = oe.contract("ab, bcd->acd", jump_op, state_notevolved.tensors[site])
 
     else:
         # 2-site jump: check if long-range or adjacent
@@ -204,8 +215,8 @@ def stochastic_process(
 
         if is_pauli(chosen_process) and is_longrange(chosen_process):
             jump_op_0, jump_op_1 = chosen_process["factors"][0], chosen_process["factors"][1]
-            state.tensors[i] = oe.contract("ab, bcd->acd", jump_op_0, state.tensors[i])
-            state.tensors[j] = oe.contract("ab, bcd->acd", jump_op_1, state.tensors[j])
+            state_notevolved.tensors[i] = oe.contract("ab, bcd->acd", jump_op_0, state_notevolved.tensors[i])
+            state_notevolved.tensors[j] = oe.contract("ab, bcd->acd", jump_op_1, state_notevolved.tensors[j])
         else:
             # Adjacent 2-site process: use matrix
             if np.abs(i - j) > 1:
@@ -213,14 +224,15 @@ def stochastic_process(
                 raise ValueError(msg)
 
             jump_op = chosen_process["matrix"]
-            merged = merge_mps_tensors(state.tensors[i], state.tensors[j])
+            merged = merge_mps_tensors(state_notevolved.tensors[i], state_notevolved.tensors[j])
             merged = oe.contract("ab, bcd->acd", jump_op, merged)
             # For stochastic jumps, always contract singular values to the right
             tensor_left_new, tensor_right_new = split_mps_tensor(
-                merged, "right", sim_params, [state.physical_dimensions[i], state.physical_dimensions[j]], dynamic=False
+                merged, "right", sim_params, [state_notevolved.physical_dimensions[i], state_notevolved.physical_dimensions[j]], dynamic=False
             )
-            state.tensors[i], state.tensors[j] = tensor_left_new, tensor_right_new
+            state_notevolved.tensors[i], state_notevolved.tensors[j] = tensor_left_new, tensor_right_new
 
     # Normalize MPS after jump
-    state.normalize("B", decomposition="SVD")
+    state_notevolved.normalize("B", decomposition="SVD")
+    state = copy.deepcopy(state_notevolved)
     return state
