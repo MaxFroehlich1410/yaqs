@@ -20,7 +20,7 @@ import random
 import time
 from collections.abc import Iterable
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -28,10 +28,10 @@ from typing import Optional
 import numpy as np
 from qiskit.circuit import QuantumCircuit
 from qiskit.circuit.library import RXXGate, RYYGate
-from qiskit.quantum_info import Operator, Pauli, Statevector
+from qiskit.quantum_info import Pauli, Statevector
+from qiskit_aer import AerSimulator
 from qiskit_aer.noise import NoiseModel as QiskitNoiseModel
 from qiskit_aer.noise.errors import PauliLindbladError
-from qiskit.utils import algorithm_globals
 
 from mqt.yaqs import simulator
 from mqt.yaqs.core.data_structures.networks import MPS
@@ -289,39 +289,52 @@ class QiskitTrajectoryRunner:
         self.config = config
         self.pairs = pairs
         self.weights = weights
-        self.initial = initial
-        angle = 2.0 * config.tau
-        self.op_rxx = Operator(RXXGate(angle))
-        self.op_ryy = Operator(RYYGate(angle))
+        self.initial = np.asarray(initial.data, dtype=np.complex64)
+        self.angle = 2.0 * config.tau
+        self.simulator = AerSimulator(method="matrix_product_state")
         labels = [a + b for a in "IXYZ" for b in "IXYZ"]
-        self.noise_ops = {label: Operator(Pauli(label)) for label in labels}
         self.identity_label = "II"
         self.non_identity = [label for label in labels if label != self.identity_label]
 
     def run(self, traj_seed: int) -> np.ndarray:
         cfg = self.config
         rng = np.random.default_rng(traj_seed)
-        state = self.initial.copy()
-        results = np.empty((cfg.steps + 1, cfg.num_qubits), dtype=np.float64)
-        results[0] = compute_local_z_expectations(state.data, self.weights)
+        circuit = QuantumCircuit(cfg.num_qubits)
+        circuit.barrier(label="SAMPLE_OBSERVABLES")
+        circuit.save_statevector(label="m0")
 
         for step in range(cfg.steps):
             for pair in self.pairs:
-                state = state.evolve(self.op_ryy, pair)
-                self._apply_noise(state, pair, rng)
+                circuit.ryy(self.angle, *pair)
+                label = self._sample_noise(rng)
+                if label != self.identity_label:
+                    circuit.pauli(label, pair)
             for pair in self.pairs:
-                state = state.evolve(self.op_rxx, pair)
-                self._apply_noise(state, pair, rng)
-            results[step + 1] = compute_local_z_expectations(state.data, self.weights)
+                circuit.rxx(self.angle, *pair)
+                label = self._sample_noise(rng)
+                if label != self.identity_label:
+                    circuit.pauli(label, pair)
+            circuit.barrier(label="SAMPLE_OBSERVABLES")
+            circuit.save_statevector(label=f"m{step + 1}")
 
+        job = self.simulator.run(
+            circuit,
+            shots=0,
+            seed_simulator=traj_seed,
+            initial_statevector=self.initial,
+        )
+        result = job.result()
+        data = result.data(0)
+        results = np.empty((cfg.steps + 1, cfg.num_qubits), dtype=np.float64)
+        for m in range(cfg.steps + 1):
+            state = np.asarray(data[f"m{m}"], dtype=np.complex64)
+            results[m] = compute_local_z_expectations(state, self.weights)
         return results.T
 
-    def _apply_noise(self, state: Statevector, pair: tuple[int, int], rng: np.random.Generator) -> None:
+    def _sample_noise(self, rng: np.random.Generator) -> str:
         if rng.random() < self.config.p_noise:
-            label = self.non_identity[rng.integers(len(self.non_identity))]
-        else:
-            label = self.identity_label
-        state.data = state.evolve(self.noise_ops[label], pair).data
+            return self.non_identity[rng.integers(len(self.non_identity))]
+        return self.identity_label
 
 
 class YAQSTrajectoryRunner:
@@ -457,7 +470,7 @@ def save_summary_csv(path: Path, records: list[dict], cfg: ExperimentConfig) -> 
 
 def save_run_meta(path: Path, cfg: ExperimentConfig, records: list[dict]) -> None:
     meta = {
-        "config": cfg.__dict__,
+        "config": asdict(cfg),
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "methods": records,
     }
@@ -581,7 +594,8 @@ def main() -> None:
     # Global seeding for deterministic behaviour
     random.seed(cfg.seed0)
     np.random.seed(cfg.seed0)
-    algorithm_globals.random_seed = cfg.seed0
+    # Qiskit 2.x removed ``algorithm_globals``; seeding NumPy suffices for deterministic
+    # behaviour of the Aer simulators used here.
 
     bitstring = "0001000100010001"
     initial = initial_statevector(bitstring)
