@@ -33,6 +33,50 @@ if TYPE_CHECKING:
     from ..data_structures.simulation_parameters import AnalogSimParams, StrongSimParams, WeakSimParams
 
 
+def apply_mpo_jump(
+    state: MPS,
+    mpo_tensors: list[NDArray[np.complex128]],
+    sim_params: AnalogSimParams | StrongSimParams | WeakSimParams,  # noqa: ARG001
+) -> None:
+    """Apply an MPO jump operator to an MPS in-place via site-by-site contraction.
+
+    This function contracts each MPO tensor with the corresponding MPS tensor, growing
+    the bond dimensions, and then truncates via SVD at each bond to control dimension growth.
+    Used for long-range projector unraveling where the jump operator (I ± P) is represented
+    as a bond-2 MPO.
+
+    Args:
+        state: MPS to modify in-place.
+        mpo_tensors: List of MPO tensors in internal order (σ_out, σ_in, left, right).
+        sim_params: Simulation parameters (kept for interface consistency; SVD thresholds
+            are accessed via the MPS state's internal settings).
+
+    Note:
+        The MPO tensors must already be in the internal order (σ_out, σ_in, left, right).
+        This is the format produced by add_projector_expansion_longrange_mpo() in noise_model.py.
+    """
+    assert len(mpo_tensors) == state.length, f"MPO length {len(mpo_tensors)} must match MPS length {state.length}"
+
+    # Forward sweep: contract MPO into MPS and truncate bonds
+    for site in range(state.length):
+        # MPS tensor: (χ_L, d_in, χ_R)
+        # MPO tensor: (d_out, d_in, D_L, D_R)
+        mps_tensor = state.tensors[site]
+        mpo_tensor = mpo_tensors[site]
+
+        # Contract over physical input dimension: d_in
+        # (χ_L, d_in, χ_R) with (d_out, d_in, D_L, D_R) -> (χ_L, χ_R, d_out, D_L, D_R)
+        contracted = oe.contract("abc,dabe->cedab", mps_tensor, mpo_tensor)
+
+        # Reshape to merge virtual dimensions: (χ_L × D_L, d_out, χ_R × D_R)
+        chi_L, chi_R, d_out, D_L, D_R = contracted.shape
+        state.tensors[site] = contracted.reshape(chi_L * D_L, d_out, chi_R * D_R)
+
+        # SVD truncate at this bond to control bond dimension growth
+        if site < state.length - 1:
+            state.shift_orthogonality_center_right(site, decomposition="SVD")
+
+
 def calculate_stochastic_factor(state: MPS) -> NDArray[np.float64]:
     """Calculate the stochastic factor for a given state.
 
@@ -114,6 +158,15 @@ def create_probability_distribution(
                     if is_pauli(process):
                         gamma = process["strength"]
                         dp_m = dt * gamma * state.norm(site)
+                        dp_m_list.append(float(dp_m.real))
+
+                    elif "mpo" in process:
+                        # Long-range projector unraveling: MPO representation
+                        # Need to apply MPO to compute norm of jumped state
+                        gamma = process["strength"]
+                        jumped_state = copy.deepcopy(state)
+                        apply_mpo_jump(jumped_state, process["mpo"], sim_params)
+                        dp_m = dt * gamma * jumped_state.norm(site)
                         dp_m_list.append(float(dp_m.real))
 
                     elif process["sites"][1] == site + 1:
@@ -209,9 +262,15 @@ def stochastic_process(
         i, j = sites
 
         if is_pauli(chosen_process) and is_longrange(chosen_process):
+            # Standard long-range Pauli: apply factors to each site
             jump_op_0, jump_op_1 = chosen_process["factors"][0], chosen_process["factors"][1]
             state.tensors[i] = oe.contract("ab, bcd->acd", jump_op_0, state.tensors[i])
             state.tensors[j] = oe.contract("ab, bcd->acd", jump_op_1, state.tensors[j])
+
+        elif "mpo" in chosen_process:
+            # Long-range projector unraveling: apply bond-2 MPO (I ± P)
+            apply_mpo_jump(state, chosen_process["mpo"], sim_params)
+
         else:
             # Adjacent 2-site process: use matrix
             if np.abs(i - j) > 1:

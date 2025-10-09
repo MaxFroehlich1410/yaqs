@@ -351,6 +351,147 @@ def add_unitary_gauss_expansion(
         })
 
 
+def _parse_longrange_factors(proc: dict[str, Any]) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Return (sigma, tau) as 2x2 matrices for a long-range two-site Pauli process.
+    Prefers explicit 'factors' if present; otherwise parses the crosstalk suffix.
+    """
+    if "factors" in proc:
+        a, b = proc["factors"]
+        return np.array(a, dtype=complex), np.array(b, dtype=complex)
+
+    name = str(proc["name"])
+    if name.startswith("crosstalk_") or name.startswith("longrange_crosstalk_"):
+        suffix = name.rsplit("_", 1)[-1]
+        assert len(suffix) == 2 and all(c in "xyz" for c in suffix), \
+            f"Invalid long-range label suffix: {suffix!r}"
+        a, b = suffix[0], suffix[1]
+        return np.array(PAULI_MAP[a], dtype=complex), np.array(PAULI_MAP[b], dtype=complex)
+
+    raise ValueError("Cannot infer long-range Pauli factors. Provide proc['factors'] = (sigma, tau).")
+
+
+def _build_I_plus_bP_mpo_lr(
+    L: int,
+    i: int,
+    j: int,
+    sigma: np.ndarray,
+    tau: np.ndarray,
+    a: complex,
+    b: complex,
+) -> list[np.ndarray]:
+    """
+    Bond-2 MPO (left-right order) for O = a*I + b*(sigma_i ⊗ tau_j) on a length-L chain (qubits).
+    Tensors are returned as a list with shapes (left, right, 2, 2) at each site.
+    """
+    assert 0 <= i < j < L, "Require 0 <= i < j < L."
+    Id2 = np.eye(2, dtype=complex)
+
+    tensors: list[np.ndarray] = []
+
+    # Sites < i : 1x1 identity blocks
+    for _ in range(i):
+        tensors.append(Id2.reshape(1, 1, 2, 2))
+
+    # Site i : row block [ I , sigma ]  -> shape (1,2,2,2)
+    Wi = np.zeros((1, 2, 2, 2), dtype=complex)
+    Wi[0, 0] = Id2
+    Wi[0, 1] = sigma
+    tensors.append(Wi)
+
+    # i < l < j : diagonal blocks diag(I, I) -> shape (2,2,2,2)
+    for _ in range(i + 1, j):
+        Wmid = np.zeros((2, 2, 2, 2), dtype=complex)
+        Wmid[0, 0] = Id2
+        Wmid[1, 1] = Id2
+        tensors.append(Wmid)
+
+    # Site j : column block [ a*I ; b*tau ] -> shape (2,1,2,2)
+    Wj = np.zeros((2, 1, 2, 2), dtype=complex)
+    Wj[0, 0] = a * Id2
+    Wj[1, 0] = b * tau
+    tensors.append(Wj)
+
+    # Sites > j : 1x1 identity blocks
+    for _ in range(j + 1, L):
+        tensors.append(Id2.reshape(1, 1, 2, 2))
+
+    return tensors
+
+
+def add_projector_expansion_longrange_mpo(
+    processes_out: list[dict[str, Any]],
+    proc: dict[str, Any],
+    *,
+    L: int,
+    gamma: float,
+) -> None:
+    """
+    Long-range projector unraveling for a two-site Pauli string P=σ_i τ_j (i<j, non-adjacent).
+    Appends two processes with MPOs for (I ± P) and rate gamma/2 each.
+    The MPO tensors are stored directly in your internal order (σ_out, σ_in, left, right),
+    so you can call MPO.init_custom(mpo, transpose=False) and contract into the MPS.
+    """
+    sites = sorted(proc["sites"])
+    assert len(sites) == 2 and abs(sites[1] - sites[0]) > 1, \
+        "Use dense 2×2/4×4 for single-site/adjacent; this is for non-adjacent two-site."
+
+    i, j = sites
+
+    # --- get single-site factors σ, τ for P = σ_i τ_j
+    sigma, tau = _parse_longrange_factors(proc)  # returns 2×2 matrices
+
+    Id2 = np.eye(2, dtype=complex)
+
+    def build_mpo_phys(a: complex, b: complex) -> list[np.ndarray]:
+        """
+        Bond-2 MPO in internal order (σ_out, σ_in, left, right) for O = a*I + b*(σ_i τ_j).
+        """
+        tensors: list[np.ndarray] = []
+
+        # sites < i: 1×1 identity blocks
+        for _ in range(i):
+            tensors.append(Id2.reshape(2, 2, 1, 1))
+
+        # site i: row [ I  σ ]  -> (left,right)=(1,2), then transpose to (phys,phys,left,right)
+        Wi_lr = np.zeros((1, 2, 2, 2), dtype=complex)
+        Wi_lr[0, 0] = Id2
+        Wi_lr[0, 1] = sigma
+        Wi = np.transpose(Wi_lr, (2, 3, 0, 1))
+        tensors.append(Wi)
+
+        # i < l < j: diag(I, I)
+        for _ in range(i + 1, j):
+            Wmid_lr = np.zeros((2, 2, 2, 2), dtype=complex)
+            Wmid_lr[0, 0] = Id2
+            Wmid_lr[1, 1] = Id2
+            Wmid = np.transpose(Wmid_lr, (2, 3, 0, 1))
+            tensors.append(Wmid)
+
+        # site j: column [ a*I ; b*τ ]
+        Wj_lr = np.zeros((2, 1, 2, 2), dtype=complex)
+        Wj_lr[0, 0] = a * Id2
+        Wj_lr[1, 0] = b * tau
+        Wj = np.transpose(Wj_lr, (2, 3, 0, 1))
+        tensors.append(Wj)
+
+        # sites > j: 1×1 identity blocks
+        for _ in range(j + 1, L):
+            tensors.append(Id2.reshape(2, 2, 1, 1))
+
+        return tensors
+
+    # Two projector branches: (I ± P) with rates γ/2
+    for comp, bsign in (("plus", +1.0), ("minus", -1.0)):
+        mpo = build_mpo_phys(a=1.0, b=bsign)
+        processes_out.append({
+            "name": f"projector_{comp}_" + str(proc["name"]),
+            "sites": [i, j],
+            "strength": gamma / 2.0,   # L = sqrt(γ/2) * (I ± P)
+            "mpo": mpo,                # IN INTERNAL ORDER (σ_out, σ_in, left, right)
+            "mpo_bond_dim": 2,
+        })
+
 
 class NoiseModel:
     """
@@ -368,6 +509,7 @@ class NoiseModel:
         self,
         processes: list[dict[str, Any]] | None = None,
         *,
+        num_qubits: int = 0,
         # Hazard policy: relative boost with a cap (good defaults)
         hazard_gain: float = 3.0,       # Λ_target ≈ hazard_gain * sum(γ) for analog group(s)
         hazard_cap: float = 0.5,       # but not above this absolute cap per layer
@@ -450,8 +592,15 @@ class NoiseModel:
                 # build Pauli string matrix P (supports 1-site pauli_* and crosstalk_ab adjacent)
                 P = get_pauli_string_matrix(proc)
                 if unravel == "projector":
-                    add_projector_expansion(self.processes, proc, P, gamma)
+                    # 1-site or adjacent 2-site
+                    if len(sites) == 1 or abs(sites[1] - sites[0]) == 1:
+                        P = get_pauli_string_matrix(proc)         # 2x2 or 4x4
+                        add_projector_expansion(self.processes, proc, P, gamma)
+                    else:
+                        # long-range 2-site
+                        add_projector_expansion_longrange_mpo(self.processes, proc, L = num_qubits, gamma=gamma)
                     continue
+
 
                 # choose scheme/angles: use per-process overrides if present, else group default
                 if unravel == "unitary_2pt" or (unravel == "analog_auto" and group_defaults.get("analog_auto", {}).get("scheme") == "unitary_2pt"):
