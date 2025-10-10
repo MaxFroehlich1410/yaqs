@@ -230,7 +230,7 @@ if __name__ == "__main__":
     num_qubits = 6
     num_layers = 10
     tau = 0.1
-    noise_strength = 0.01
+    noise_strength = 0.1
     
     # ========== MODE SELECTION ==========
     # For small systems: Set run_density_matrix=True and specify threshold_mse
@@ -241,8 +241,8 @@ if __name__ == "__main__":
     enable_yaqs_projector = True
     enable_yaqs_unitary_2pt = False
     enable_yaqs_unitary_gauss = False
-    threshold_mse = 5e-3  # Target MSE threshold (only used if run_density_matrix=True)
-    fixed_trajectories = 50  # Number of trajectories for large systems (only used if run_density_matrix=False)
+    threshold_mse = 5e-4  # Target MSE threshold (only used if run_density_matrix=True)
+    fixed_trajectories = 100  # Number of trajectories for large systems (only used if run_density_matrix=False)
     # ====================================
     
     print("="*70)

@@ -77,7 +77,6 @@ def apply_mpo_jump(
     # Now normalize the MPS and truncate bond dimensions via canonical form sweep
     # This brings the MPS back to canonical form and controls bond dimension growth
     state.normalize("B", decomposition="SVD")
-    print("applied mpo jump to state")
 
 
 def calculate_stochastic_factor(state: MPS) -> NDArray[np.float64]:
