@@ -398,6 +398,13 @@ class NoiseModel:
                     self.processes.append(proc)
                     continue
 
+                # ACCEPT already-expanded long-range 2-site processes that carry an MPO
+                # (e.g., projector_plus_* or projector_minus_* built by the projector expander)
+                if "mpo" in proc:
+                    # Sites were normalized above; just pass through the materialized MPO
+                    self.processes.append(proc)
+                    continue
+
                 # non-adjacent 2-site handling (legacy labels and factors)
                 if str(name).startswith("crosstalk_") or str(name).startswith(CROSSTALK_PREFIX):
                     if "factors" not in proc:

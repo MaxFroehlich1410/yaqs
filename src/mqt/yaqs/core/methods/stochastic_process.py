@@ -57,24 +57,27 @@ def apply_mpo_jump(
     """
     assert len(mpo_tensors) == state.length, f"MPO length {len(mpo_tensors)} must match MPS length {state.length}"
 
-    # Forward sweep: contract MPO into MPS and truncate bonds
+    # Apply MPO to all sites first (bond dimensions will grow)
     for site in range(state.length):
-        # MPS tensor: (χ_L, d_in, χ_R)
-        # MPO tensor: (d_out, d_in, D_L, D_R)
+        # MPS tensor: (d_in, χ_L, χ_R) - standard YAQS convention
+        # MPO tensor: (d_out, d_in, D_L, D_R) - standard YAQS convention
         mps_tensor = state.tensors[site]
         mpo_tensor = mpo_tensors[site]
 
         # Contract over physical input dimension: d_in
-        # (χ_L, d_in, χ_R) with (d_out, d_in, D_L, D_R) -> (χ_L, χ_R, d_out, D_L, D_R)
-        contracted = oe.contract("abc,dabe->cedab", mps_tensor, mpo_tensor)
+        # MPS (d_in, χ_L, χ_R) ⊗ MPO (d_out, d_in, D_L, D_R)
+        # Einsum: abc (MPS) with eafg (MPO), contract over a (d_in)
+        # Result: (d_out, χ_L, D_L, χ_R, D_R)
+        contracted = oe.contract("abc,eafg->ebfcg", mps_tensor, mpo_tensor)
 
-        # Reshape to merge virtual dimensions: (χ_L × D_L, d_out, χ_R × D_R)
-        chi_L, chi_R, d_out, D_L, D_R = contracted.shape
-        state.tensors[site] = contracted.reshape(chi_L * D_L, d_out, chi_R * D_R)
+        # Reshape to merge virtual dimensions: (d_out, χ_L × D_L, χ_R × D_R)
+        d_out, chi_L, D_L, chi_R, D_R = contracted.shape
+        state.tensors[site] = contracted.reshape(d_out, chi_L * D_L, chi_R * D_R)
 
-        # SVD truncate at this bond to control bond dimension growth
-        if site < state.length - 1:
-            state.shift_orthogonality_center_right(site, decomposition="SVD")
+    # Now normalize the MPS and truncate bond dimensions via canonical form sweep
+    # This brings the MPS back to canonical form and controls bond dimension growth
+    state.normalize("B", decomposition="SVD")
+    print("applied mpo jump to state")
 
 
 def calculate_stochastic_factor(state: MPS) -> NDArray[np.float64]:

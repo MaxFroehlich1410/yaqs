@@ -1,8 +1,11 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-from ..worker_functions.qiskit_simulators import run_qiskit_exact, run_qiskit_mps
-from ..worker_functions.yaqs_simulator import run_yaqs, build_noise_models
+from mqt.yaqs.codex_experiments.worker_functions.qiskit_simulators import run_qiskit_exact, run_qiskit_mps
+from mqt.yaqs.codex_experiments.worker_functions.yaqs_simulator import run_yaqs
+from mqt.yaqs.core.data_structures.noise_model import NoiseModel
+import copy
+
 
 from qiskit import QuantumCircuit
 from qiskit.quantum_info import Pauli
@@ -12,6 +15,35 @@ from mqt.yaqs.core.libraries.circuit_library import create_ising_circuit
 
 def staggered_magnetization(z, num_qubits):
     return np.sum([(-1)**i * z[i] for i in range(num_qubits)]) / num_qubits
+
+
+def build_noise_models(processes):
+    # Always deep-copy; each NoiseModel gets its own process list.
+    procs_std  = copy.deepcopy(processes)
+    procs_proj = copy.deepcopy(processes)
+    # procs_2pt  = copy.deepcopy(processes)
+    # procs_gaus = copy.deepcopy(processes)
+
+    # (1) standard (whatever your default is)
+    noise_model_normal = NoiseModel(procs_std)
+
+    # (2) projector unraveling: same Lindblad rate γ per process
+    for p in procs_proj:
+        p["unraveling"] = "projector"
+    # for p in procs_2pt:
+    #     p["unraveling"] = "unitary_2pt"
+    # for p in procs_gaus:
+    #     p["unraveling"] = "unitary_gauss"
+        # strength unchanged
+    noise_model_projector = NoiseModel(procs_proj)
+    # noise_model_unitary_2pt = NoiseModel(procs_2pt)
+    # noise_model_unitary_gauss = NoiseModel(procs_gaus, gauss_M=11)
+
+    return (noise_model_normal,
+            noise_model_projector)
+            # noise_model_unitary_2pt,
+            # noise_model_unitary_gauss)
+
 
 
 def xy_trotter_layer(N, tau, order="YX") -> QuantumCircuit:
@@ -206,7 +238,7 @@ if __name__ == "__main__":
     run_density_matrix = True  # Set to False for large systems (>12 qubits)
     enable_qiskit_mps = True
     enable_yaqs_standard = True
-    enable_yaqs_projector = False
+    enable_yaqs_projector = True
     enable_yaqs_unitary_2pt = False
     enable_yaqs_unitary_gauss = False
     threshold_mse = 5e-3  # Target MSE threshold (only used if run_density_matrix=True)
@@ -247,7 +279,7 @@ if __name__ == "__main__":
     ] + [
         {"name": "crosstalk_xx", "sites": [0, num_qubits - 1], "strength": noise_strength}
     ]
-    noise_model_normal, noise_model_projector, noise_model_unitary_2pt, noise_model_unitary_gauss = build_noise_models(processes)
+    noise_model_normal, noise_model_projector = build_noise_models(processes)
 
     # Initialize Qiskit noise model
     qiskit_noise_model = QiskitNoiseModel()
