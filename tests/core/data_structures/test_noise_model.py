@@ -246,3 +246,31 @@ def test_unraveling_projector_two_site_adjacent() -> None:
     assert any(np.allclose(m, I4 + P) for m in mats)
     assert any(np.allclose(m, I4 - P) for m in mats)
     assert all(np.isclose(p["strength"], gamma / 2.0) for p in nm.processes)
+
+
+def test_unraveling_projector_two_site_longrange() -> None:
+    """Test long-range projector unraveling produces MPO-based processes.
+
+    For non-adjacent two-site processes, projector unraveling should generate
+    two processes with MPO representations (I ± P) instead of dense matrices.
+    """
+    gamma = 0.08
+    num_qubits = 5
+    nm = NoiseModel([
+        {"name": "crosstalk_zz", "sites": [0, 3], "strength": gamma, "unraveling": "projector"}
+    ], num_qubits=num_qubits)
+
+    # Should produce two processes: projector_plus and projector_minus
+    assert len(nm.processes) == 2
+    names = [p["name"] for p in nm.processes]
+    assert any("projector_plus" in name for name in names)
+    assert any("projector_minus" in name for name in names)
+
+    # Each process should have MPO representation, not dense matrix
+    for p in nm.processes:
+        assert "mpo" in p, "Long-range projector should have MPO representation"
+        assert "mpo_bond_dim" in p
+        assert p["mpo_bond_dim"] == 2, "Bond dimension should be 2 for (I ± P) structure"
+        assert "matrix" not in p, "Long-range projector should not have dense matrix"
+        assert p["sites"] == [0, 3]
+        assert np.isclose(p["strength"], gamma / 2.0)
