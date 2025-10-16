@@ -274,3 +274,86 @@ def test_unraveling_projector_two_site_longrange() -> None:
         assert "matrix" not in p, "Long-range projector should not have dense matrix"
         assert p["sites"] == [0, 3]
         assert np.isclose(p["strength"], gamma / 2.0)
+
+
+def test_unraveling_unitary_2pt_two_site_longrange() -> None:
+    """Test long-range unitary_2pt unraveling produces MPO-based processes.
+    
+    For non-adjacent two-site processes, unitary_2pt unraveling should generate
+    two processes with bond-2 MPO representations for U_± = exp(±i*θ₀*P).
+    """
+    gamma = 0.05
+    theta0 = 0.3
+    num_qubits = 6
+    nm = NoiseModel([
+        {"name": "crosstalk_xy", "sites": [1, 4], "strength": gamma, "unraveling": "unitary_2pt", "theta0": theta0}
+    ], num_qubits=num_qubits)
+    
+    # Should produce two processes: unitary2pt_plus and unitary2pt_minus
+    assert len(nm.processes) == 2
+    names = [p["name"] for p in nm.processes]
+    assert any("unitary2pt_plus" in name for name in names)
+    assert any("unitary2pt_minus" in name for name in names)
+    
+    # Verify strength calculation: λ = γ / sin²(θ₀), each component has λ/2
+    s_val = np.sin(theta0) ** 2
+    expected_lam = gamma / s_val
+    expected_strength = expected_lam / 2.0
+    
+    # Each process should have MPO representation, not dense matrix
+    for p in nm.processes:
+        assert "mpo" in p, "Long-range unitary_2pt should have MPO representation"
+        assert "mpo_bond_dim" in p
+        assert p["mpo_bond_dim"] == 2, "Bond dimension should be 2 for exp(i*θ*P) structure"
+        assert "matrix" not in p, "Long-range unitary_2pt should not have dense matrix"
+        assert p["sites"] == [1, 4]
+        assert np.isclose(p["strength"], expected_strength), f"Expected {expected_strength}, got {p['strength']}"
+
+
+def test_unraveling_unitary_gauss_two_site_longrange() -> None:
+    """Test long-range unitary_gauss unraveling produces MPO-based processes.
+    
+    For non-adjacent two-site processes, unitary_gauss unraveling should generate
+    M processes with bond-2 MPO representations for U(θₖ) with Gaussian weights.
+    """
+    gamma = 0.06
+    sigma = 0.25
+    M = 11
+    num_qubits = 5
+    nm = NoiseModel([
+        {"name": "longrange_crosstalk_zx", "sites": [0, 3], "strength": gamma, 
+         "unraveling": "unitary_gauss", "sigma": sigma, "M": M}
+    ], num_qubits=num_qubits)
+    
+    # Should produce M processes
+    assert len(nm.processes) == M, f"Expected {M} processes, got {len(nm.processes)}"
+    
+    # Verify all have unitary_gauss_ prefix
+    names = [p["name"] for p in nm.processes]
+    assert all("unitary_gauss_" in name for name in names)
+    
+    # Verify strength sum: λ = γ / E[sin²(θ)]
+    total_strength = sum(p["strength"] for p in nm.processes)
+    
+    # Reconstruct the expected λ
+    gauss_k = 4.0  # default
+    theta_max = gauss_k * sigma
+    thetas_pos = np.linspace(0.0, theta_max, (M + 1) // 2)
+    thetas = np.concatenate([-thetas_pos[:0:-1], thetas_pos])
+    w = np.exp(-0.5 * (thetas / sigma) ** 2)
+    w /= w.sum()
+    w = 0.5 * (w + w[::-1])
+    s_weight = float(np.sum(w * (np.sin(thetas) ** 2)))
+    expected_lam = gamma / s_weight
+    
+    assert np.isclose(total_strength, expected_lam, rtol=1e-6), \
+        f"Sum of strengths {total_strength} should equal λ = {expected_lam}"
+    
+    # Each process should have MPO representation, not dense matrix
+    for p in nm.processes:
+        assert "mpo" in p, "Long-range unitary_gauss should have MPO representation"
+        assert "mpo_bond_dim" in p
+        assert p["mpo_bond_dim"] == 2, "Bond dimension should be 2 for exp(i*θ*P) structure"
+        assert "matrix" not in p, "Long-range unitary_gauss should not have dense matrix"
+        assert p["sites"] == [0, 3]
+        assert p["strength"] >= 0, "All weights should be non-negative"

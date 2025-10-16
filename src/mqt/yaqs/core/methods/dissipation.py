@@ -153,6 +153,13 @@ def apply_dissipation(
 
                         processed_projector_pairs.add(pair_key)
                         continue  # done with this long-range projector pair
+                    elif "mpo" in process and (nm.startswith("unitary2pt_") or nm.startswith("unitary_gauss_")):
+                        # Each analog MPO component contributes hazard = strength (state-independent).
+                        # Apply exp(-0.5 * dt * strength) per component; no grouping needed since
+                        # product of scalars equals scalar of sum: ∏ exp(-0.5·dt·γᵢ) = exp(-0.5·dt·Σγᵢ)
+                        gamma_comp = float(process["strength"])
+                        state.tensors[i] *= np.exp(-0.5 * dt * gamma_comp)
+                        continue
                     else:
                         msg = "Non-Pauli long-range processes are not implemented yet"
                         raise NotImplementedError(msg)

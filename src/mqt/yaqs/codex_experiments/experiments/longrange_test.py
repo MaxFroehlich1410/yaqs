@@ -17,32 +17,32 @@ def staggered_magnetization(z, num_qubits):
     return np.sum([(-1)**i * z[i] for i in range(num_qubits)]) / num_qubits
 
 
-def build_noise_models(processes):
+def build_noise_models(processes, num_qubits):
     # Always deep-copy; each NoiseModel gets its own process list.
     procs_std  = copy.deepcopy(processes)
     procs_proj = copy.deepcopy(processes)
-    # procs_2pt  = copy.deepcopy(processes)
-    # procs_gaus = copy.deepcopy(processes)
+    procs_2pt  = copy.deepcopy(processes)
+    procs_gaus = copy.deepcopy(processes)
 
     # (1) standard (whatever your default is)
-    noise_model_normal = NoiseModel(procs_std)
+    noise_model_normal = NoiseModel(procs_std, num_qubits=num_qubits)
 
     # (2) projector unraveling: same Lindblad rate γ per process
     for p in procs_proj:
         p["unraveling"] = "projector"
-    # for p in procs_2pt:
-    #     p["unraveling"] = "unitary_2pt"
-    # for p in procs_gaus:
-    #     p["unraveling"] = "unitary_gauss"
+    for p in procs_2pt:
+        p["unraveling"] = "unitary_2pt"
+    for p in procs_gaus:
+        p["unraveling"] = "unitary_gauss"
         # strength unchanged
-    noise_model_projector = NoiseModel(procs_proj)
-    # noise_model_unitary_2pt = NoiseModel(procs_2pt)
-    # noise_model_unitary_gauss = NoiseModel(procs_gaus, gauss_M=11)
+    noise_model_projector = NoiseModel(procs_proj, num_qubits=num_qubits)
+    noise_model_unitary_2pt = NoiseModel(procs_2pt, num_qubits=num_qubits)
+    noise_model_unitary_gauss = NoiseModel(procs_gaus, num_qubits=num_qubits, gauss_M=11)
 
     return (noise_model_normal,
-            noise_model_projector)
-            # noise_model_unitary_2pt,
-            # noise_model_unitary_gauss)
+            noise_model_projector,
+            noise_model_unitary_2pt,
+            noise_model_unitary_gauss)
 
 
 
@@ -230,7 +230,7 @@ if __name__ == "__main__":
     num_qubits = 6
     num_layers = 10
     tau = 0.1
-    noise_strength = 0.1
+    noise_strength = 0.01
     
     # ========== MODE SELECTION ==========
     # For small systems: Set run_density_matrix=True and specify threshold_mse
@@ -239,8 +239,8 @@ if __name__ == "__main__":
     enable_qiskit_mps = True
     enable_yaqs_standard = True
     enable_yaqs_projector = True
-    enable_yaqs_unitary_2pt = False
-    enable_yaqs_unitary_gauss = False
+    enable_yaqs_unitary_2pt = True
+    enable_yaqs_unitary_gauss = True
     threshold_mse = 5e-4  # Target MSE threshold (only used if run_density_matrix=True)
     fixed_trajectories = 100  # Number of trajectories for large systems (only used if run_density_matrix=False)
     # ====================================
@@ -279,7 +279,7 @@ if __name__ == "__main__":
     ] + [
         {"name": "crosstalk_xx", "sites": [0, num_qubits - 1], "strength": noise_strength}
     ]
-    noise_model_normal, noise_model_projector = build_noise_models(processes)
+    noise_model_normal, noise_model_projector, noise_model_unitary_2pt, noise_model_unitary_gauss = build_noise_models(processes, num_qubits)
 
     # Initialize Qiskit noise model
     qiskit_noise_model = QiskitNoiseModel()

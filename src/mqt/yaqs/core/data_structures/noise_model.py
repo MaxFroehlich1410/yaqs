@@ -173,6 +173,65 @@ def _build_I_plus_bP_mpo_lr(
     return tensors
 
 
+def _build_aI_plus_bP_mpo_phys(
+    L: int,
+    i: int,
+    j: int,
+    sigma: np.ndarray,
+    tau: np.ndarray,
+    a: complex,
+    b: complex,
+) -> list[np.ndarray]:
+    """
+    Bond-2 MPO in INTERNAL order (σ_out, σ_in, left, right) for O = a*I + b*(sigma_i ⊗ tau_j),
+    exact for non-adjacent two-site Pauli strings. (Row block at i, diag(I,I) in (i,j), column block at j.)
+    
+    Args:
+        L: Total number of qubits in the system
+        i: Left site index (i < j)
+        j: Right site index (i < j)
+        sigma: 2x2 Pauli matrix acting on site i
+        tau: 2x2 Pauli matrix acting on site j
+        a: Coefficient of identity operator
+        b: Coefficient of Pauli string operator
+        
+    Returns:
+        List of MPO tensors in internal order (σ_out, σ_in, left, right)
+    """
+    assert 0 <= i < j < L, "Require 0 <= i < j < L."
+    Id2 = np.eye(2, dtype=complex)
+    tensors: list[np.ndarray] = []
+
+    # sites < i: identity 1x1
+    for _ in range(i):
+        tensors.append(Id2.reshape(2, 2, 1, 1))
+
+    # site i: row [ I , sigma ]  (left,right)=(1,2) then transpose to (σ_out,σ_in,left,right)
+    Wi_lr = np.zeros((1, 2, 2, 2), dtype=complex)
+    Wi_lr[0, 0] = Id2
+    Wi_lr[0, 1] = sigma
+    tensors.append(np.transpose(Wi_lr, (2, 3, 0, 1)))
+
+    # i < l < j: diag(I, I)
+    for _ in range(i + 1, j):
+        Wmid_lr = np.zeros((2, 2, 2, 2), dtype=complex)
+        Wmid_lr[0, 0] = Id2
+        Wmid_lr[1, 1] = Id2
+        tensors.append(np.transpose(Wmid_lr, (2, 3, 0, 1)))
+
+    # site j: column [ a*I ; b*tau ]
+    Wj_lr = np.zeros((2, 1, 2, 2), dtype=complex)
+    Wj_lr[0, 0] = a * Id2
+    Wj_lr[1, 0] = b * tau
+    tensors.append(np.transpose(Wj_lr, (2, 3, 0, 1)))
+
+    # sites > j: identity 1x1
+    for _ in range(j + 1, L):
+        tensors.append(Id2.reshape(2, 2, 1, 1))
+
+    return tensors
+
+
 def add_projector_expansion_longrange_mpo(
     processes_out: list[dict[str, Any]],
     proc: dict[str, Any],
@@ -243,6 +302,97 @@ def add_projector_expansion_longrange_mpo(
             "sites": [i, j],
             "strength": gamma / 2.0,   # L = sqrt(γ/2) * (I ± P)
             "mpo": mpo,                # IN INTERNAL ORDER (σ_out, σ_in, left, right)
+            "mpo_bond_dim": 2,
+        })
+
+
+def add_unitary_2pt_expansion_longrange_mpo(
+    processes_out: list[dict[str, Any]],
+    proc: dict[str, Any],
+    *,
+    L: int,
+    gamma: float,
+    theta0: float,
+) -> None:
+    """
+    Long-range analog (two-point) unraveling: U_{±} = exp(± i θ0 P) with P = σ_i τ_j (i<j).
+    Bond-2 MPO with a = cos θ0, b = ± i sin θ0. Two components, each at rate λ/2 with λ = γ / sin^2 θ0.
+    
+    Args:
+        processes_out: List to append expanded processes to
+        proc: Original process dictionary with 'name', 'sites', 'strength'
+        L: Total number of qubits in the system
+        gamma: Original Lindblad rate
+        theta0: Rotation angle for two-point unraveling
+    """
+    i, j = sorted(proc["sites"])
+    sigma, tau = _parse_longrange_factors(proc)
+    s_val = float(np.sin(theta0) ** 2)
+    assert s_val > 0.0, "theta0 too small; sin^2(theta0) must be > 0."
+    lam = gamma / s_val
+    for comp, sgn in (("plus", +1.0), ("minus", -1.0)):
+        a = np.cos(theta0)
+        b = 1j * sgn * np.sin(theta0)
+        mpo = _build_aI_plus_bP_mpo_phys(L, i, j, sigma, tau, a, b)
+        processes_out.append({
+            "name": f"unitary2pt_{comp}_" + str(proc["name"]),
+            "sites": [i, j],
+            "strength": lam / 2.0,  # two equal components sum to λ
+            "mpo": mpo,
+            "mpo_bond_dim": 2,
+        })
+
+
+def add_unitary_gauss_expansion_longrange_mpo(
+    processes_out: list[dict[str, Any]],
+    proc: dict[str, Any],
+    *,
+    L: int,
+    gamma: float,
+    sigma: float,
+    gauss_M: int,
+    gauss_k: float,
+) -> None:
+    """
+    Long-range analog (Gaussian) unraveling: discrete symmetric quadrature θ_k with weights w_k.
+    Each component U(θ_k) has bond-2 MPO with a = cos θ_k, b = i sin θ_k, and rate λ w_k,
+    where λ = γ / E_w[sin^2 θ].
+    
+    Args:
+        processes_out: List to append expanded processes to
+        proc: Original process dictionary with 'name', 'sites', 'strength'
+        L: Total number of qubits in the system
+        gamma: Original Lindblad rate
+        sigma: Standard deviation for Gaussian distribution
+        gauss_M: Number of discretization points
+        gauss_k: Factor for theta_max = gauss_k * sigma
+    """
+    i, j = sorted(proc["sites"])
+    S, T = _parse_longrange_factors(proc)
+
+    M = int(proc.get("M", gauss_M))
+    theta_max = float(proc.get("theta_max", gauss_k * sigma))
+
+    thetas_pos = np.linspace(0.0, theta_max, (M + 1) // 2)
+    thetas = np.concatenate([-thetas_pos[:0:-1], thetas_pos])
+    w = np.exp(-0.5 * (thetas / sigma) ** 2)
+    w /= w.sum()
+    w = 0.5 * (w + w[::-1])  # exact symmetry
+
+    s_weight = float(np.sum(w * (np.sin(thetas) ** 2)))
+    assert s_weight > 1e-12, "E[sin^2 θ] too small; increase sigma or theta_max/M."
+    lam = gamma / s_weight
+
+    for idx, (wk, th) in enumerate(zip(w, thetas)):
+        if wk <= 0.0:
+            continue
+        a, b = np.cos(th), 1j * np.sin(th)
+        mpo = _build_aI_plus_bP_mpo_phys(L, i, j, S, T, a, b)
+        processes_out.append({
+            "name": f"unitary_gauss_{idx}_" + str(proc["name"]),
+            "sites": [i, j],
+            "strength": lam * float(wk),
+            "mpo": mpo,
             "mpo_bond_dim": 2,
         })
 
@@ -356,6 +506,18 @@ class NoiseModel:
 
                 # choose scheme/angles: use per-process overrides if present, else group default
                 if unravel == "unitary_2pt" or (unravel == "analog_auto" and group_defaults.get("analog_auto", {}).get("scheme") == "unitary_2pt"):
+                    # Check if long-range 2-site
+                    if len(sites) == 2 and abs(sites[1] - sites[0]) > 1:
+                        # Long-range unitary_2pt
+                        theta0 = float(proc.get("theta0", group_defaults.get(unravel, group_defaults.get("analog_auto", {})).get("theta0", 0.0)))
+                        if theta0 <= 0.0:
+                            # fall back to group s*
+                            defaults = group_defaults.get(unravel, group_defaults.get("analog_auto", {}))
+                            s_use = float(defaults["s_star"])
+                            theta0 = float(np.arcsin(np.sqrt(s_use)))
+                        add_unitary_2pt_expansion_longrange_mpo(self.processes, proc, L=num_qubits, gamma=gamma, theta0=theta0)
+                        continue
+                    # 1-site or adjacent 2-site
                     P = get_pauli_string_matrix(proc)  # 2x2 or 4x4 for 1-site or adjacent 2-site
                     theta0 = float(proc.get("theta0", group_defaults.get(unravel, group_defaults.get("analog_auto", {})).get("theta0", 0.0)))
                     if theta0 <= 0.0:
@@ -368,6 +530,20 @@ class NoiseModel:
 
                 # Gaussian path
                 if unravel == "unitary_gauss" or (unravel == "analog_auto" and group_defaults.get("analog_auto", {}).get("scheme") == "unitary_gauss"):
+                    # Check if long-range 2-site
+                    if len(sites) == 2 and abs(sites[1] - sites[0]) > 1:
+                        # Long-range unitary_gauss
+                        sigma = float(proc.get("sigma", group_defaults.get(unravel, group_defaults.get("analog_auto", {})).get("sigma", 0.0)))
+                        if sigma <= 0.0:
+                            defaults = group_defaults.get(unravel, group_defaults.get("analog_auto", {}))
+                            s_use = float(defaults["s_star"])
+                            # require s_use < 1/2
+                            s_use = min(s_use, 0.5 - 1e-6)
+                            sigma = float(np.sqrt(-0.5 * np.log(1.0 - 2.0 * s_use)))
+                        add_unitary_gauss_expansion_longrange_mpo(self.processes, proc, L=num_qubits, gamma=gamma, 
+                                                                  sigma=sigma, gauss_M=gauss_M, gauss_k=gauss_k)
+                        continue
+                    # 1-site or adjacent 2-site
                     P = get_pauli_string_matrix(proc)  # 2x2 or 4x4 for 1-site or adjacent 2-site
                     sigma = float(proc.get("sigma", group_defaults.get(unravel, group_defaults.get("analog_auto", {})).get("sigma", 0.0)))
                     if sigma <= 0.0:
