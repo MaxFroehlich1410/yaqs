@@ -814,3 +814,92 @@ def test_analog_simulation_unraveling_unitary_2pt() -> None:
         assert observable.trajectories is not None
         assert observable.trajectories.shape == (num_traj, 1)
         assert observable.results.shape == (1,)
+
+
+def test_analog_simulation_unraveling_longrange_unitary_2pt() -> None:
+    """Analog sim with long-range unitary_2pt unraveling (integration smoke test)."""
+    length = 5
+    initial_state = MPS(length, state="zeros")
+
+    H = MPO()
+    H.init_ising(length, J=1, g=0.5)
+    elapsed_time = 0.2
+    dt = 0.1
+    sample_timesteps = False
+    num_traj = 4
+    max_bond_dim = 32
+    threshold = 0
+    order = 1
+
+    measurements = [Observable(Z(), i) for i in range(length)]
+    sim_params = AnalogSimParams(
+        measurements, elapsed_time, dt, num_traj, max_bond_dim, threshold, order, sample_timesteps=sample_timesteps
+    )
+
+    gamma = 5e-3
+    theta0 = 0.2
+    # Long-range two-site analog unraveling with unitary_2pt
+    noise_model = NoiseModel([
+        {"name": "crosstalk_xy", "sites": [0, 3], "strength": gamma, "unraveling": "unitary_2pt", "theta0": theta0},
+        {"name": "pauli_z", "sites": [2], "strength": gamma, "unraveling": "projector"},
+    ], num_qubits=length)
+
+    # Verify noise model expansion worked correctly
+    assert len(noise_model.processes) == 4, "Expected 2 (unitary2pt) + 2 (projector) = 4 processes"
+    
+    # Run simulation
+    simulator.run(initial_state, H, sim_params, noise_model, parallel=False)
+    
+    # Verify results structure
+    for observable in sim_params.observables:
+        assert observable.results is not None
+        assert observable.trajectories is not None
+        assert observable.trajectories.shape == (num_traj, 1)
+        assert observable.results.shape == (1,)
+        # Bounded expectation value
+        assert -1.01 <= float(np.real(observable.results[0])) <= 1.01
+
+
+def test_analog_simulation_unraveling_longrange_unitary_gauss() -> None:
+    """Analog sim with long-range unitary_gauss unraveling (integration smoke test)."""
+    length = 4
+    initial_state = MPS(length, state="zeros")
+
+    H = MPO()
+    H.init_ising(length, J=1, g=0.5)
+    elapsed_time = 0.15
+    dt = 0.05
+    sample_timesteps = False
+    num_traj = 3
+    max_bond_dim = 24
+    threshold = 0
+    order = 1
+
+    measurements = [Observable(Z(), i) for i in range(length)]
+    sim_params = AnalogSimParams(
+        measurements, elapsed_time, dt, num_traj, max_bond_dim, threshold, order, sample_timesteps=sample_timesteps
+    )
+
+    gamma = 4e-3
+    sigma = 0.15
+    M = 7
+    # Long-range two-site analog unraveling with unitary_gauss
+    noise_model = NoiseModel([
+        {"name": "longrange_crosstalk_zz", "sites": [0, 3], "strength": gamma, 
+         "unraveling": "unitary_gauss", "sigma": sigma, "M": M},
+    ], num_qubits=length)
+
+    # Verify noise model expansion worked correctly
+    assert len(noise_model.processes) == M, f"Expected {M} processes from Gaussian unraveling"
+    
+    # Run simulation
+    simulator.run(initial_state, H, sim_params, noise_model, parallel=False)
+    
+    # Verify results structure
+    for observable in sim_params.observables:
+        assert observable.results is not None
+        assert observable.trajectories is not None
+        assert observable.trajectories.shape == (num_traj, 1)
+        assert observable.results.shape == (1,)
+        # Bounded expectation value
+        assert -1.01 <= float(np.real(observable.results[0])) <= 1.01

@@ -1,19 +1,49 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from qutip import sigmax, sigmay, sigmaz, qeye, tensor, sesolve, basis
 
-from ..worker_functions.qiskit_simulators import run_qiskit_exact, run_qiskit_mps
-from ..worker_functions.yaqs_simulator import run_yaqs, build_noise_models
-from ..worker_functions.qiskit_noisy_sim import qiskit_noisy_simulator
-from ..worker_functions.plotting import plot_avg_bond_dims
+from mqt.yaqs.codex_experiments.worker_functions.qiskit_simulators import run_qiskit_exact, run_qiskit_mps
+from mqt.yaqs.codex_experiments.worker_functions.yaqs_simulator import run_yaqs
+from mqt.yaqs.core.data_structures.noise_model import NoiseModel
+import copy
+
 
 from qiskit import QuantumCircuit
 from qiskit.quantum_info import Pauli
 from qiskit_aer.noise.errors import PauliLindbladError
 from qiskit_aer.noise import NoiseModel as QiskitNoiseModel
+from mqt.yaqs.core.libraries.circuit_library import create_ising_circuit
 
 def staggered_magnetization(z, num_qubits):
     return np.sum([(-1)**i * z[i] for i in range(num_qubits)]) / num_qubits
+
+
+def build_noise_models(processes, num_qubits):
+    # Always deep-copy; each NoiseModel gets its own process list.
+    procs_std  = copy.deepcopy(processes)
+    procs_proj = copy.deepcopy(processes)
+    procs_2pt  = copy.deepcopy(processes)
+    procs_gaus = copy.deepcopy(processes)
+
+    # (1) standard (whatever your default is)
+    noise_model_normal = NoiseModel(procs_std, num_qubits=num_qubits)
+
+    # (2) projector unraveling: same Lindblad rate γ per process
+    for p in procs_proj:
+        p["unraveling"] = "projector"
+    for p in procs_2pt:
+        p["unraveling"] = "unitary_2pt"
+    for p in procs_gaus:
+        p["unraveling"] = "unitary_gauss"
+        # strength unchanged
+    noise_model_projector = NoiseModel(procs_proj, num_qubits=num_qubits)
+    noise_model_unitary_2pt = NoiseModel(procs_2pt, num_qubits=num_qubits)
+    noise_model_unitary_gauss = NoiseModel(procs_gaus, num_qubits=num_qubits, gauss_M=11)
+
+    return (noise_model_normal,
+            noise_model_projector,
+            noise_model_unitary_2pt,
+            noise_model_unitary_gauss)
+
 
 
 def xy_trotter_layer(N, tau, order="YX") -> QuantumCircuit:
@@ -46,7 +76,7 @@ def compute_mse(pred, exact):
 def find_required_trajectories(
     method_name,
     simulator_func,
-    exact_stag,
+    exact_z_expvals,
     threshold_mse,
     init_circuit,
     trotter_step,
@@ -54,7 +84,7 @@ def find_required_trajectories(
     num_layers,
     noise_model,
     qiskit_noise_model,
-    stag_initial,
+    z_initial,
     max_traj=1000,
     fixed_traj=None
 ):
@@ -68,16 +98,16 @@ def find_required_trajectories(
     Args:
         method_name: Name of the method for logging
         simulator_func: Function to run simulation (run_yaqs or run_qiskit_mps) (None if not running)
-        exact_stag: Exact staggered magnetization reference (None if unavailable)
+        exact_z_expvals: Exact Z expectation values reference (None if unavailable) - shape (num_qubits, num_layers+1)
         threshold_mse: Target MSE threshold (None if no exact reference)
         fixed_traj: If set, run exactly this many trajectories (for large systems)
         max_traj: Maximum trajectories to try
     
     Returns:
-        (num_trajectories_needed, final_mse, stag_values, bond_dims)
+        (num_trajectories_needed, final_mse, z_expvals, bond_dims)
     """
     # Determine how many trajectories to run
-    use_mse_threshold = (exact_stag is not None and threshold_mse is not None)
+    use_mse_threshold = (exact_z_expvals is not None and threshold_mse is not None)
     target_traj = fixed_traj if fixed_traj is not None else max_traj
     
     # If we're running a fixed number of trajectories (large system mode),
@@ -97,12 +127,11 @@ def find_required_trajectories(
                 qiskit_noise_model, num_traj=fixed_traj
             )
         
-        # Compute staggered magnetization
-        stag = [stag_initial] + [staggered_magnetization(results_all[:, t], num_qubits) 
-                                  for t in range(num_layers)]
+        # Store Z expectation values: shape (num_qubits, num_layers+1)
+        z_expvals = np.column_stack([z_initial, results_all])
         
         print(f"  ✓ {method_name}: Completed {fixed_traj} trajectory(ies) in parallel")
-        return fixed_traj, None, stag, bond_dims
+        return fixed_traj, None, z_expvals, bond_dims
     
     # Otherwise, run trajectories incrementally (small system mode with MSE checking)
     cumulative_results = None  # Will store sum of z-expectation values
@@ -143,13 +172,12 @@ def find_required_trajectories(
         # Compute average over all trajectories so far
         avg_results = cumulative_results / num_traj
         
-        # Compute staggered magnetization
-        stag = [stag_initial] + [staggered_magnetization(avg_results[:, t], num_qubits) 
-                                  for t in range(num_layers)]
+        # Store Z expectation values: shape (num_qubits, num_layers+1)
+        z_expvals = np.column_stack([z_initial, avg_results])
         
         # Compute MSE if exact reference is available
         if use_mse_threshold:
-            mse = compute_mse(stag, exact_stag)
+            mse = compute_mse(z_expvals.flatten(), exact_z_expvals.flatten())
             print(f"  {method_name}: Trajectory {num_traj}: MSE = {mse:.6e} (threshold = {threshold_mse:.6e})")
             
             # Check if threshold is met
@@ -169,7 +197,7 @@ def find_required_trajectories(
                 else:
                     bond_dims = None
                 
-                return num_traj, mse, stag, bond_dims
+                return num_traj, mse, z_expvals, bond_dims
         else:
             # No exact reference - just report progress
             print(f"  {method_name}: Trajectory {num_traj}/{target_traj} completed")
@@ -194,27 +222,27 @@ def find_required_trajectories(
     else:
         bond_dims = None
     
-    return target_traj, mse, stag, bond_dims
+    return target_traj, mse, z_expvals, bond_dims
 
 
 if __name__ == "__main__":
     # Simulation parameters
-    num_qubits = 10
-    num_layers = 30
+    num_qubits = 6
+    num_layers = 10
     tau = 0.1
     noise_strength = 0.01
     
     # ========== MODE SELECTION ==========
     # For small systems: Set run_density_matrix=True and specify threshold_mse
     # For large systems: Set run_density_matrix=False and specify fixed_trajectories
-    run_density_matrix = False  # Set to False for large systems (>12 qubits)
+    run_density_matrix = True  # Set to False for large systems (>12 qubits)
     enable_qiskit_mps = True
     enable_yaqs_standard = True
     enable_yaqs_projector = True
-    enable_yaqs_unitary_2pt = False
-    enable_yaqs_unitary_gauss = False
+    enable_yaqs_unitary_2pt = True
+    enable_yaqs_unitary_gauss = True
     threshold_mse = 5e-4  # Target MSE threshold (only used if run_density_matrix=True)
-    fixed_trajectories = 50  # Number of trajectories for large systems (only used if run_density_matrix=False)
+    fixed_trajectories = 100  # Number of trajectories for large systems (only used if run_density_matrix=False)
     # ====================================
     
     print("="*70)
@@ -237,17 +265,21 @@ if __name__ == "__main__":
             init_circuit.x(i)
     
     # One Trotter step
-    trotter_step = xy_trotter_layer(num_qubits, tau)
+    trotter_step = create_ising_circuit(num_qubits, 1.0, 0.5, tau, 1, periodic=True)
+    # trotter_step.draw(output="mpl")
+    # plt.show()
 
     # Initialize noise models (YAQS)
     processes = [
         {"name": "pauli_x", "sites": [i], "strength": noise_strength}
         for i in range(num_qubits)
-    ] + [
+     ] + [
         {"name": "crosstalk_xx", "sites": [i, i+1], "strength": noise_strength}
         for i in range(num_qubits - 1)
+    ] + [
+        {"name": "crosstalk_xx", "sites": [0, num_qubits - 1], "strength": noise_strength}
     ]
-    noise_model_normal, noise_model_projector, noise_model_unitary_2pt, noise_model_unitary_gauss = build_noise_models(processes)
+    noise_model_normal, noise_model_projector, noise_model_unitary_2pt, noise_model_unitary_gauss = build_noise_models(processes, num_qubits)
 
     # Initialize Qiskit noise model
     qiskit_noise_model = QiskitNoiseModel()
@@ -262,24 +294,28 @@ if __name__ == "__main__":
             ["cx", "cz", "swap", "rxx", "ryy", "rzz", "rzx"],
             [qubit, next_qubit]
         )
+    qiskit_noise_model.add_quantum_error(
+        TwoQubit_XX_error,
+        ["cx", "cz", "swap", "rxx", "ryy", "rzz", "rzx"],
+        [0, num_qubits - 1]
+    )
 
-    # Compute initial staggered magnetization
+    # Compute initial Z expectation values
     z_initial = np.array([1.0 if i % 4 != 3 else -1.0 for i in range(num_qubits)])
-    stag_initial = staggered_magnetization(z_initial, num_qubits)
     
     # Run exact density matrix simulation (reference) if enabled
     if run_density_matrix:
         print("\nRunning exact density matrix simulation (reference)...")
-        z_expvals_exact = run_qiskit_exact(
+        z_expvals_exact_results = run_qiskit_exact(
             num_qubits, num_layers, init_circuit, trotter_step, 
             qiskit_noise_model, method="density_matrix"
         )
-        exact_stag = [stag_initial] + [staggered_magnetization(z_expvals_exact[:, t], num_qubits) 
-                                         for t in range(num_layers)]
+        # Shape: (num_qubits, num_layers+1) - prepend initial values
+        exact_z_expvals = np.column_stack([z_initial, z_expvals_exact_results])
         print("Exact reference computed.\n")
     else:
         print("\nSkipping exact density matrix simulation (large system mode).\n")
-        exact_stag = None
+        exact_z_expvals = None
 
     # Test each method
     results = {}
@@ -293,10 +329,10 @@ if __name__ == "__main__":
     # Qiskit MPS
     if enable_qiskit_mps:
         print("\n1. Qiskit MPS (Standard Unraveling)")
-        num_traj_mps, mse_mps, stag_mps, bonds_mps = find_required_trajectories(
+        num_traj_mps, mse_mps, z_expvals_mps, bonds_mps = find_required_trajectories(
             "Qiskit MPS",
             run_qiskit_mps,
-            exact_stag,
+            exact_z_expvals,
             threshold_mse,
             init_circuit,
             trotter_step,
@@ -304,19 +340,19 @@ if __name__ == "__main__":
             num_layers,
             None,
             qiskit_noise_model,
-            stag_initial,
+            z_initial,
             max_traj=1000,
             fixed_traj=None if run_density_matrix else fixed_trajectories
         )
-        results["Qiskit MPS"] = {"trajectories": num_traj_mps, "mse": mse_mps, "stag": stag_mps, "bonds": bonds_mps}
+        results["Qiskit MPS"] = {"trajectories": num_traj_mps, "mse": mse_mps, "z_expvals": z_expvals_mps, "bonds": bonds_mps}
     
     # YAQS Standard
     if enable_yaqs_standard:
         print("\n2. YAQS Standard Unraveling")
-        num_traj_std, mse_std, stag_std, bonds_std = find_required_trajectories(
+        num_traj_std, mse_std, z_expvals_std, bonds_std = find_required_trajectories(
             "YAQS Standard",
             run_yaqs,
-            exact_stag,
+            exact_z_expvals,
             threshold_mse if run_density_matrix else None,
             init_circuit,
             trotter_step,
@@ -324,19 +360,19 @@ if __name__ == "__main__":
             num_layers,
             noise_model_normal,
             None,
-            stag_initial,
+            z_initial,
             max_traj=1000,
             fixed_traj=None if run_density_matrix else fixed_trajectories
         )
-        results["YAQS Standard"] = {"trajectories": num_traj_std, "mse": mse_std, "stag": stag_std, "bonds": bonds_std}
+        results["YAQS Standard"] = {"trajectories": num_traj_std, "mse": mse_std, "z_expvals": z_expvals_std, "bonds": bonds_std}
         
     # YAQS Projector
     if enable_yaqs_projector:
         print("\n3. YAQS Projector Unraveling")
-        num_traj_proj, mse_proj, stag_proj, bonds_proj = find_required_trajectories(
+        num_traj_proj, mse_proj, z_expvals_proj, bonds_proj = find_required_trajectories(
             "YAQS Projector",
             run_yaqs,
-            exact_stag,
+            exact_z_expvals,
             threshold_mse if run_density_matrix else None,
             init_circuit,
             trotter_step,
@@ -344,19 +380,19 @@ if __name__ == "__main__":
             num_layers,
             noise_model_projector,
             None,
-            stag_initial,
+            z_initial,
             max_traj=1000,
             fixed_traj=None if run_density_matrix else fixed_trajectories
         )
-        results["YAQS Projector"] = {"trajectories": num_traj_proj, "mse": mse_proj, "stag": stag_proj, "bonds": bonds_proj}
+        results["YAQS Projector"] = {"trajectories": num_traj_proj, "mse": mse_proj, "z_expvals": z_expvals_proj, "bonds": bonds_proj}
         
     # YAQS Unitary 2pt
     if enable_yaqs_unitary_2pt:
         print("\n4. YAQS Unitary 2pt Unraveling")
-        num_traj_2pt, mse_2pt, stag_2pt, bonds_2pt = find_required_trajectories(
+        num_traj_2pt, mse_2pt, z_expvals_2pt, bonds_2pt = find_required_trajectories(
             "YAQS Unitary 2pt",
             run_yaqs,
-            exact_stag,
+            exact_z_expvals,
             threshold_mse if run_density_matrix else None,
             init_circuit,
             trotter_step,
@@ -364,19 +400,19 @@ if __name__ == "__main__":
             num_layers,
             noise_model_unitary_2pt,
             None,
-            stag_initial,
+            z_initial,
             max_traj=1000,
             fixed_traj=None if run_density_matrix else fixed_trajectories
         )
-        results["YAQS Unitary 2pt"] = {"trajectories": num_traj_2pt, "mse": mse_2pt, "stag": stag_2pt, "bonds": bonds_2pt}
+        results["YAQS Unitary 2pt"] = {"trajectories": num_traj_2pt, "mse": mse_2pt, "z_expvals": z_expvals_2pt, "bonds": bonds_2pt}
         
     # YAQS Unitary Gauss
     if enable_yaqs_unitary_gauss:
         print("\n5. YAQS Unitary Gauss Unraveling")
-        num_traj_gauss, mse_gauss, stag_gauss, bonds_gauss = find_required_trajectories(
+        num_traj_gauss, mse_gauss, z_expvals_gauss, bonds_gauss = find_required_trajectories(
             "YAQS Unitary Gauss",
             run_yaqs,
-            exact_stag,
+            exact_z_expvals,
             threshold_mse if run_density_matrix else None,
             init_circuit,
             trotter_step,
@@ -384,140 +420,115 @@ if __name__ == "__main__":
             num_layers,
             noise_model_unitary_gauss,
             None,
-            stag_initial,
+            z_initial,
             max_traj=1000,
             fixed_traj=None if run_density_matrix else fixed_trajectories
         )
-        results["YAQS Unitary Gauss"] = {"trajectories": num_traj_gauss, "mse": mse_gauss, "stag": stag_gauss, "bonds": bonds_gauss}
+        results["YAQS Unitary Gauss"] = {"trajectories": num_traj_gauss, "mse": mse_gauss, "z_expvals": z_expvals_gauss, "bonds": bonds_gauss}
 
     # Print summary
     print("\n" + "="*70)
     print("RESULTS SUMMARY")
     print("="*70)
     
+    # Define qubit indices to track
+    first_qubit = 0
+    middle_qubit = num_qubits // 2
+    last_qubit = num_qubits - 1
+    
     if run_density_matrix:
         # With exact reference: show MSE and speedup
         print(f"{'Method':<25} {'Trajectories':<15} {'Final MSE':<15} {'Speedup':<10}")
         print("-"*70)
-        baseline_traj = results["YAQS Standard"]["trajectories"]
+        baseline_traj = results["YAQS Standard"]["trajectories"] if "YAQS Standard" in results else list(results.values())[0]["trajectories"]
         for method, data in results.items():
             speedup = baseline_traj / data["trajectories"]
             mse_str = f"{data['mse']:.2e}" if data['mse'] is not None else "N/A"
             print(f"{method:<25} {data['trajectories']:<15} {mse_str:<15} {speedup:<10.2f}x")
     else:
         # Without exact reference: just show trajectories and final values
-        print(f"{'Method':<25} {'Trajectories':<15} {'Final Stag Mag':<20}")
+        print(f"{'Method':<25} {'Trajectories':<15} {'Z_0 (final)':<15} {'Z_mid (final)':<15} {'Z_N (final)':<15}")
         print("-"*70)
         for method, data in results.items():
-            final_stag = data["stag"][-1] if data["stag"] is not None else None
-            stag_str = f"{final_stag:.6f}" if final_stag is not None else "N/A"
-            print(f"{method:<25} {data['trajectories']:<15} {stag_str:<20}")
+            z_exp = data["z_expvals"]  # shape: (num_qubits, num_layers+1)
+            z0_final = f"{z_exp[first_qubit, -1]:.6f}" if z_exp is not None else "N/A"
+            zmid_final = f"{z_exp[middle_qubit, -1]:.6f}" if z_exp is not None else "N/A"
+            zN_final = f"{z_exp[last_qubit, -1]:.6f}" if z_exp is not None else "N/A"
+            print(f"{method:<25} {data['trajectories']:<15} {z0_final:<15} {zmid_final:<15} {zN_final:<15}")
     
     print("="*70)
 
-    # Organize bond dimension data in the format expected by plot_avg_bond_dims
-    # Only include methods that were actually run
-    qiskit_bonds = results.get("Qiskit MPS", {}).get("bonds", None) if "Qiskit MPS" in results else None
-    yaqs_bonds_by_label = {}
-    if "YAQS Standard" in results:
-        yaqs_bonds_by_label["standard"] = results["YAQS Standard"]["bonds"]
-    if "YAQS Projector" in results:
-        yaqs_bonds_by_label["projector"] = results["YAQS Projector"]["bonds"]
-    if "YAQS Unitary 2pt" in results:
-        yaqs_bonds_by_label["unitary_2pt"] = results["YAQS Unitary 2pt"]["bonds"]
-    if "YAQS Unitary Gauss" in results:
-        yaqs_bonds_by_label["unitary_gauss"] = results["YAQS Unitary Gauss"]["bonds"]
+    # Create visualization with 2 rows of 3 subplots each
+    # Top row: Z expectation values for first, middle, last qubit
+    # Bottom row: Errors compared to exact for first, middle, last qubit
+    fig = plt.figure(figsize=(20, 10))
     
-    # Process bond dimensions for plotting (using same logic as plot_avg_bond_dims)
-    layers = np.arange(1, num_layers + 1)
-    bond_data_for_plot = {}
     colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd']
     method_names = list(results.keys())
-    
-    # Process Qiskit MPS bonds
-    if qiskit_bonds is not None and "per_layer_mean_across_shots" in qiskit_bonds:
-        q_mean = np.asarray(qiskit_bonds["per_layer_mean_across_shots"])
-        bond_data_for_plot["Qiskit MPS"] = q_mean[:num_layers]
-    
-    # Process YAQS bonds (mean across trajectories; drop initial and final columns)
-    yaqs_method_map = {
-        "standard": "YAQS Standard",
-        "projector": "YAQS Projector",
-        "unitary_2pt": "YAQS Unitary 2pt",
-        "unitary_gauss": "YAQS Unitary Gauss",
-    }
-    
-    for label, arr in yaqs_bonds_by_label.items():
-        method_name = yaqs_method_map[label]
-        if arr is None:
-            continue
-        mean_per_col = np.mean(arr, axis=0)
-        if mean_per_col.size >= 2:
-            mean_layers = mean_per_col[1:-1]
-        else:
-            mean_layers = mean_per_col
-        bond_data_for_plot[method_name] = mean_layers[:num_layers]
-
-    # Create visualization with 3 subplots
-    fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(18, 6))
-    
-    # Subplot 1: Bar chart of required trajectories
-    trajectories = [results[m]["trajectories"] for m in method_names]
-    
-    bars = ax1.bar(range(len(method_names)), trajectories, color=colors, alpha=0.8, edgecolor='black')
-    ax1.set_xticks(range(len(method_names)))
-    ax1.set_xticklabels(method_names, rotation=45, ha='right')
-    ax1.set_ylabel("Number of Trajectories", fontsize=12)
-    if run_density_matrix:
-        ax1.set_title(f"Trajectories Required to Reach MSE < {threshold_mse:.2e}", fontsize=13)
-    else:
-        ax1.set_title(f"Fixed Trajectories per Method", fontsize=13)
-    ax1.grid(True, axis='y', linestyle='--', alpha=0.5)
-    
-    # Add value labels on bars
-    for i, (bar, traj) in enumerate(zip(bars, trajectories)):
-        height = bar.get_height()
-        ax1.text(bar.get_x() + bar.get_width()/2., height,
-                f'{int(traj)}',
-                ha='center', va='bottom', fontsize=10, fontweight='bold')
-    
-    # Subplot 2: Staggered magnetization comparison
     times = np.arange(num_layers + 1) * tau
     
-    # Plot exact solution if available
-    if run_density_matrix and exact_stag is not None:
-        ax2.plot(times, exact_stag, '-', label="Exact (Density Matrix)", 
-                 alpha=1.0, linewidth=3, color='red', zorder=10)
+    # Top row: Z expectation values
+    ax1 = plt.subplot(2, 3, 1)  # First qubit
+    ax2 = plt.subplot(2, 3, 2)  # Middle qubit
+    ax3 = plt.subplot(2, 3, 3)  # Last qubit
     
-    for i, (method, data) in enumerate(results.items()):
-        ax2.plot(times, data["stag"], '-o', label=f"{method} ({data['trajectories']} traj)", 
-                 alpha=0.7, markersize=3, color=colors[i])
+    # Bottom row: Errors
+    ax4 = plt.subplot(2, 3, 4)  # First qubit error
+    ax5 = plt.subplot(2, 3, 5)  # Middle qubit error
+    ax6 = plt.subplot(2, 3, 6)  # Last qubit error
     
-    ax2.set_xlabel("Time", fontsize=12)
-    ax2.set_ylabel(r"$S^z(\pi)$", fontsize=12)
-    if run_density_matrix:
-        ax2.set_title("Staggered Magnetization at Threshold", fontsize=13)
-    else:
-        ax2.set_title(f"Staggered Magnetization ({fixed_trajectories} traj)", fontsize=13)
-    ax2.legend(fontsize=8, loc='best')
-    ax2.grid(True, linestyle="--", alpha=0.5)
+    qubit_indices = [first_qubit, middle_qubit, last_qubit]
+    qubit_labels = [f"Qubit 0", f"Qubit {middle_qubit} (middle)", f"Qubit {last_qubit} (last)"]
+    expectval_axes = [ax1, ax2, ax3]
+    error_axes = [ax4, ax5, ax6]
     
-    # Subplot 3: Bond dimension growth (using same logic as plot_avg_bond_dims)
-    for i, method in enumerate(method_names):
-        if method in bond_data_for_plot:
-            bond_avg = bond_data_for_plot[method]
-            ax3.plot(layers, bond_avg[:num_layers], '-o', label=method, 
-                     alpha=0.8, markersize=4, color=colors[i], linewidth=2)
-    
-    ax3.set_xlabel("Layer", fontsize=12)
-    ax3.set_ylabel("avg max bond dim", fontsize=12)
-    ax3.set_title("Bond Dimension Growth", fontsize=13)
-    ax3.legend(fontsize=8, loc='upper left')
-    ax3.grid(True, linestyle="--", alpha=0.5)
+    # Plot Z expectation values for each qubit
+    for qubit_idx, qubit_label, ax_exp, ax_err in zip(qubit_indices, qubit_labels, expectval_axes, error_axes):
+        # Plot exact solution if available
+        if run_density_matrix and exact_z_expvals is not None:
+            ax_exp.plot(times, exact_z_expvals[qubit_idx, :], '-', 
+                       label="Exact (Density Matrix)", 
+                       alpha=1.0, linewidth=3, color='red', zorder=10)
+        
+        # Plot each method
+        for i, (method, data) in enumerate(results.items()):
+            z_exp = data["z_expvals"][qubit_idx, :]  # Time series for this qubit
+            ax_exp.plot(times, z_exp, '-o', 
+                       label=f"{method} ({data['trajectories']} traj)", 
+                       alpha=0.7, markersize=3, color=colors[i])
+            
+            # Compute and plot errors if exact reference is available
+            if run_density_matrix and exact_z_expvals is not None:
+                error = np.abs(z_exp - exact_z_expvals[qubit_idx, :])
+                ax_err.plot(times, error, '-o', 
+                           label=f"{method}", 
+                           alpha=0.7, markersize=3, color=colors[i])
+        
+        # Configure expectation value subplot
+        ax_exp.set_xlabel("Time", fontsize=11)
+        ax_exp.set_ylabel(r"$\langle Z \rangle$", fontsize=11)
+        ax_exp.set_title(f"{qubit_label} - Z Expectation Value", fontsize=12)
+        ax_exp.legend(fontsize=7, loc='best')
+        ax_exp.grid(True, linestyle="--", alpha=0.5)
+        
+        # Configure error subplot
+        if run_density_matrix:
+            ax_err.set_xlabel("Time", fontsize=11)
+            ax_err.set_ylabel(r"$|\Delta\langle Z \rangle|$", fontsize=11)
+            ax_err.set_title(f"{qubit_label} - Absolute Error vs Exact", fontsize=12)
+            ax_err.legend(fontsize=7, loc='best')
+            ax_err.grid(True, linestyle="--", alpha=0.5)
+            ax_err.set_yscale('log')
+        else:
+            # Hide error plots if no exact reference
+            ax_err.text(0.5, 0.5, 'No exact reference\n(large system mode)', 
+                       ha='center', va='center', transform=ax_err.transAxes, fontsize=12)
+            ax_err.set_xticks([])
+            ax_err.set_yticks([])
     
     plt.tight_layout()
-    plt.savefig("unraveling_trajectory_efficiency.png", dpi=300)
+    plt.savefig("local_z_expectation_values_comparison.png", dpi=300)
     plt.show()
     
-    print("\nPlot saved as 'unraveling_trajectory_efficiency.png'")
+    print("\nPlot saved as 'local_z_expectation_values_comparison.png'")
 

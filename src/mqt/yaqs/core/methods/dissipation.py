@@ -118,6 +118,7 @@ def apply_dissipation(
             ]
         # 2. Apply all 2-site dissipators acting on sites (i-1, i)
         if i != 0:
+            processed_projector_pairs: set[tuple] = set()
             for process in processes_here:
                 gamma = process["strength"]
                 if is_pauli(process):
@@ -125,8 +126,43 @@ def apply_dissipation(
                     state.tensors[i] *= dissipative_factor
 
                 elif is_longrange(process):
-                    msg = "Non-Pauli Long-range processes are not implemented yet"
-                    raise NotImplementedError(msg)
+                    nm = str(process["name"])
+                    if nm.startswith("projector_"):
+                        # Group ± branches of the same original long-range Pauli string
+                        base = nm.replace("projector_plus_", "").replace("projector_minus_", "")
+                        sites_key = tuple(sorted(process["sites"]))   # (i_left, i_right)
+                        pair_key = (sites_key, base)
+                        if pair_key in processed_projector_pairs:
+                            continue  # mate already handled on this right endpoint
+
+                        # 'processes_here' already filters by right site == i, so both mates are present here
+                        mates = [q for q in processes_here
+                                 if tuple(sorted(q["sites"])) == sites_key
+                                 and str(q["name"]).endswith(base)
+                                 and str(q["name"]).startswith("projector_")]
+
+                        if len(mates) != 2:
+                            msg = f"Incomplete projector ± pair for long-range channel {base} on {sites_key}"
+                            raise ValueError(msg)
+
+                        # Sum strengths back to the original γ
+                        # Note: sum_± L†L = 2γI for projector unraveling, so mathematically should be exp(-dt*γ)
+                        # However, due to MPS canonical form handling, we use 0.5 factor like standard Pauli
+                        gamma_pair = float(mates[0]["strength"]) + float(mates[1]["strength"])  # = γ
+                        state.tensors[i] *= np.exp(-0.5 * dt * gamma_pair)
+
+                        processed_projector_pairs.add(pair_key)
+                        continue  # done with this long-range projector pair
+                    elif "mpo" in process and (nm.startswith("unitary2pt_") or nm.startswith("unitary_gauss_")):
+                        # Each analog MPO component contributes hazard = strength (state-independent).
+                        # Apply exp(-0.5 * dt * strength) per component; no grouping needed since
+                        # product of scalars equals scalar of sum: ∏ exp(-0.5·dt·γᵢ) = exp(-0.5·dt·Σγᵢ)
+                        gamma_comp = float(process["strength"])
+                        state.tensors[i] *= np.exp(-0.5 * dt * gamma_comp)
+                        continue
+                    else:
+                        msg = "Non-Pauli long-range processes are not implemented yet"
+                        raise NotImplementedError(msg)
                 else:
                     jump_op_mat = process["matrix"]
                     mat = np.conj(jump_op_mat).T @ jump_op_mat

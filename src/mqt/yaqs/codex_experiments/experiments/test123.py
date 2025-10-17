@@ -4,7 +4,7 @@ import argparse
 from qiskit import QuantumCircuit
 
 
-from worker_functions.qiskit_noisy_sim import qiskit_noisy_simulator
+from ..worker_functions.qiskit_noisy_sim import qiskit_noisy_simulator
 from mqt.yaqs.core.data_structures.noise_model import NoiseModel
 from mqt.yaqs.core.data_structures.simulation_parameters import  Observable, StrongSimParams
 from mqt.yaqs.core.libraries.gate_library import Z
@@ -26,12 +26,12 @@ if __name__ == "__main__":
     timestepsize = 0.1
     num_layers = 15
     noise_factor = 0.1
-    num_traj = 1024
+    num_traj = 100
 
 
 
     # complete circuit with layersampling
-    basis_circuit=create_ising_circuit(num_qubits, J, g, timestepsize, 1, periodic=False)
+    basis_circuit=create_ising_circuit(num_qubits, J, g, timestepsize, 1, periodic=True)
     complete_qc = QuantumCircuit(num_qubits)
     for i in range(num_layers):
         complete_qc.compose(basis_circuit, qubits=range(num_qubits), inplace=True)
@@ -97,92 +97,92 @@ if __name__ == "__main__":
     plt.grid(True, linestyle='--', alpha=0.7)
     plt.show()
 
-    # # ==== Build data matrices (use exactly what you've computed) ====
-    # # Each list currently starts with a baseline 1.0 at index 0. Your plots use [:num_layers].
-    # mps_all = np.stack([np.asarray(mps_qiskit_results_list[q][:num_layers]) for q in range(num_qubits)])  # (Q, L)
-    # dm_all  = np.stack([np.asarray(dm_qiskit_results_list[q][:num_layers])  for q in range(num_qubits)])
-    # yaqs_all = np.stack([np.asarray(complete_sim_params.observables[q].results.real[:num_layers]) for q in range(num_qubits)])
+    # ==== Build data matrices (use exactly what you've computed) ====
+    # Each list currently starts with a baseline 1.0 at index 0. Your plots use [:num_layers].
+    mps_all = np.stack([np.asarray(mps_qiskit_results_list[q][:num_layers]) for q in range(num_qubits)])  # (Q, L)
+    dm_all  = np.stack([np.asarray(dm_qiskit_results_list[q][:num_layers])  for q in range(num_qubits)])
+    yaqs_all = np.stack([np.asarray(complete_sim_params.observables[q].results.real[:num_layers]) for q in range(num_qubits)])
 
-    # # For error metrics we usually exclude the t=0 baseline; keep both if you want.
-    # mps  = mps_all[:, 1:]   # shape: (Q, L-1)
-    # dm   = dm_all[:, 1:]
-    # yaqs = yaqs_all[:, 1:]
-    # layers = np.arange(1, num_layers)  # 1..num_layers-1
+    # For error metrics we usually exclude the t=0 baseline; keep both if you want.
+    mps  = mps_all[:, 1:]   # shape: (Q, L-1)
+    dm   = dm_all[:, 1:]
+    yaqs = yaqs_all[:, 1:]
+    layers = np.arange(1, num_layers)  # 1..num_layers-1
 
-    # # ==== Errors vs exact (density-matrix) ====
-    # err_mps  = np.abs(mps  - dm)   # |MPS - Exact|
-    # err_yaqs = np.abs(yaqs - dm)   # |YAQS - Exact|
+    # ==== Errors vs exact (density-matrix) ====
+    err_mps  = np.abs(mps  - dm)   # |MPS - Exact|
+    err_yaqs = np.abs(yaqs - dm)   # |YAQS - Exact|
 
-    # # ==== Simple variance/summary metrics ====
-    # # Variance of errors across layers for each qubit
-    # var_mps_per_qubit  = np.var(err_mps,  axis=1, ddof=1)
-    # var_yaqs_per_qubit = np.var(err_yaqs, axis=1, ddof=1)
+    # ==== Simple variance/summary metrics ====
+    # Variance of errors across layers for each qubit
+    var_mps_per_qubit  = np.var(err_mps,  axis=1, ddof=1)
+    var_yaqs_per_qubit = np.var(err_yaqs, axis=1, ddof=1)
 
-    # # RMSE across layers per qubit
-    # rmse_mps  = np.sqrt(np.mean((mps  - dm)**2, axis=1))
-    # rmse_yaqs = np.sqrt(np.mean((yaqs - dm)**2, axis=1))
+    # RMSE across layers per qubit
+    rmse_mps  = np.sqrt(np.mean((mps  - dm)**2, axis=1))
+    rmse_yaqs = np.sqrt(np.mean((yaqs - dm)**2, axis=1))
 
-    # print("=== Error variance across layers (per qubit) ===")
-    # print(f"MPS  mean var: {var_mps_per_qubit.mean():.3e} | median: {np.median(var_mps_per_qubit):.3e}")
-    # print(f"YAQS mean var: {var_yaqs_per_qubit.mean():.3e} | median: {np.median(var_yaqs_per_qubit):.3e}")
+    print("=== Error variance across layers (per qubit) ===")
+    print(f"MPS  mean var: {var_mps_per_qubit.mean():.3e} | median: {np.median(var_mps_per_qubit):.3e}")
+    print(f"YAQS mean var: {var_yaqs_per_qubit.mean():.3e} | median: {np.median(var_yaqs_per_qubit):.3e}")
 
-    # print("=== Overall RMSE across layers (averaged over qubits) ===")
-    # print(f"MPS  RMSE (mean over qubits): {rmse_mps.mean():.3e}")
-    # print(f"YAQS RMSE (mean over qubits): {rmse_yaqs.mean():.3e}")
+    print("=== Overall RMSE across layers (averaged over qubits) ===")
+    print(f"MPS  RMSE (mean over qubits): {rmse_mps.mean():.3e}")
+    print(f"YAQS RMSE (mean over qubits): {rmse_yaqs.mean():.3e}")
 
-    # # ==== (1) Heatmaps: |error| over qubits × layers ====
-    # fig, axs = plt.subplots(1, 2, figsize=(12, 4), sharey=True)
-    # im0 = axs[0].imshow(err_mps, aspect='auto', origin='lower', cmap='viridis')
-    # axs[0].set_title("|MPS − Exact|")
-    # axs[0].set_xlabel("Layer")
-    # axs[0].set_ylabel("Qubit")
-    # axs[0].set_xticks(np.arange(0, len(layers), max(1, len(layers)//10)))
-    # axs[0].set_xticklabels(layers[axs[0].get_xticks().astype(int)])
-    # fig.colorbar(im0, ax=axs[0])
+    # ==== (1) Heatmaps: |error| over qubits × layers ====
+    fig, axs = plt.subplots(1, 2, figsize=(12, 4), sharey=True)
+    im0 = axs[0].imshow(err_mps, aspect='auto', origin='lower', cmap='viridis')
+    axs[0].set_title("|MPS − Exact|")
+    axs[0].set_xlabel("Layer")
+    axs[0].set_ylabel("Qubit")
+    axs[0].set_xticks(np.arange(0, len(layers), max(1, len(layers)//10)))
+    axs[0].set_xticklabels(layers[axs[0].get_xticks().astype(int)])
+    fig.colorbar(im0, ax=axs[0])
 
-    # im1 = axs[1].imshow(err_yaqs, aspect='auto', origin='lower', cmap='viridis')
-    # axs[1].set_title("|YAQS − Exact|")
-    # axs[1].set_xlabel("Layer")
-    # axs[1].set_xticks(np.arange(0, len(layers), max(1, len(layers)//10)))
-    # axs[1].set_xticklabels(layers[axs[1].get_xticks().astype(int)])
-    # fig.colorbar(im1, ax=axs[1])
+    im1 = axs[1].imshow(err_yaqs, aspect='auto', origin='lower', cmap='viridis')
+    axs[1].set_title("|YAQS − Exact|")
+    axs[1].set_xlabel("Layer")
+    axs[1].set_xticks(np.arange(0, len(layers), max(1, len(layers)//10)))
+    axs[1].set_xticklabels(layers[axs[1].get_xticks().astype(int)])
+    fig.colorbar(im1, ax=axs[1])
 
-    # fig.suptitle("Absolute error heatmaps (per qubit × layer)")
-    # plt.tight_layout()
-    # plt.show()
+    fig.suptitle("Absolute error heatmaps (per qubit × layer)")
+    plt.tight_layout()
+    plt.show()
 
-    # # ==== (2) Fan charts: median error per layer with 10–90% band across qubits ====
-    # def fan(ax, err, label, color=None):
-    #     med = np.median(err, axis=0)
-    #     p10 = np.percentile(err, 10, axis=0)
-    #     p90 = np.percentile(err, 90, axis=0)
-    #     ax.plot(layers, med, label=f"{label} median")
-    #     ax.fill_between(layers, p10, p90, alpha=0.25, label=f"{label} 10–90%")
+    # ==== (2) Fan charts: median error per layer with 10–90% band across qubits ====
+    def fan(ax, err, label, color=None):
+        med = np.median(err, axis=0)
+        p10 = np.percentile(err, 10, axis=0)
+        p90 = np.percentile(err, 90, axis=0)
+        ax.plot(layers, med, label=f"{label} median")
+        ax.fill_between(layers, p10, p90, alpha=0.25, label=f"{label} 10–90%")
 
-    # fig, ax = plt.subplots(figsize=(10, 4))
-    # fan(ax, err_mps,  "MPS")
-    # fan(ax, err_yaqs, "YAQS")
-    # ax.set_xlabel("Layer")
-    # ax.set_ylabel("|Δ⟨Z⟩| vs exact")
-    # ax.set_title("Per-layer error (median across qubits, with spread)")
-    # ax.grid(True, linestyle="--", alpha=0.6)
-    # ax.legend()
-    # plt.tight_layout()
-    # plt.show()
+    fig, ax = plt.subplots(figsize=(10, 4))
+    fan(ax, err_mps,  "MPS")
+    fan(ax, err_yaqs, "YAQS")
+    ax.set_xlabel("Layer")
+    ax.set_ylabel("|Δ⟨Z⟩| vs exact")
+    ax.set_title("Per-layer error (median across qubits, with spread)")
+    ax.grid(True, linestyle="--", alpha=0.6)
+    ax.legend()
+    plt.tight_layout()
+    plt.show()
 
-    # # ==== (3) Per-qubit RMSE bars (across layers) ====
-    # x = np.arange(num_qubits)
-    # width = 0.38
-    # plt.figure(figsize=(10, 4))
-    # plt.bar(x - width/2, rmse_mps,  width, label="MPS")
-    # plt.bar(x + width/2, rmse_yaqs, width, label="YAQS")
-    # plt.xlabel("Qubit")
-    # plt.ylabel("RMSE across layers")
-    # plt.title("Per-qubit RMSE vs exact")
-    # plt.grid(True, axis='y', linestyle='--', alpha=0.6)
-    # plt.legend()
-    # plt.tight_layout()
-    # plt.show()
+    # ==== (3) Per-qubit RMSE bars (across layers) ====
+    x = np.arange(num_qubits)
+    width = 0.38
+    plt.figure(figsize=(10, 4))
+    plt.bar(x - width/2, rmse_mps,  width, label="MPS")
+    plt.bar(x + width/2, rmse_yaqs, width, label="YAQS")
+    plt.xlabel("Qubit")
+    plt.ylabel("RMSE across layers")
+    plt.title("Per-qubit RMSE vs exact")
+    plt.grid(True, axis='y', linestyle='--', alpha=0.6)
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
 
 
 
