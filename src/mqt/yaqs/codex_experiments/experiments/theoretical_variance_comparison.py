@@ -32,72 +32,10 @@ from qiskit_aer.noise import NoiseModel as QiskitNoiseModel, PauliLindbladError
 
 
 def build_simple_circuit() -> QuantumCircuit:
-    """Build a simple 1-qubit circuit with identity gates that noise can act on."""
+    """Build a simple 2-qubit circuit with identity gates that noise can act on."""
     qc = QuantumCircuit(2)
     qc.rxx(0.001*np.pi/2, 0, 1)
     return qc
-
-
-
-# def theoretical_variance_formulas(t_layers: np.ndarray, gamma: float) -> Dict[str, np.ndarray]:
-#     """
-#     Compute theoretical variance formulas for different unraveling methods.
-    
-#     For 2-qubit system with CZ gates and Pauli-X noise, the theoretical formulas
-#     are approximations since the full 2-qubit case is more complex.
-    
-#     Args:
-#         t_layers: Physical times at each layer (t_ℓ)
-#         gamma: Noise rate
-        
-#     Returns:
-#         Dictionary with theoretical variances for each method
-#     """
-#     # For 2-qubit system with CZ gates and noise, we approximate using
-#     # the 1-qubit formulas as a baseline (the actual 2-qubit case is more complex)
-    
-#     # # Common expectation value: E[X_ℓ] = e^(-2γt_ℓ) (starting from |0⟩ with ⟨Z⟩ = +1)
-#     # expectation = np.exp(-2 * gamma * t_layers)
-    
-#     # # Unitary X jump (standard) - scaled for 2-qubit case
-#     # var_standard = 1 - np.exp(-4 * gamma * t_layers)
-    
-#     # # Projector jumps - scaled for 2-qubit case
-#     # var_projector = expectation * (1 - expectation)
-    
-#     # # Analog Gaussian kicks - scaled for 2-qubit case
-#     # var_gaussian = 0.5 + 0.5 * np.exp(-8 * gamma * t_layers) - np.exp(-4 * gamma * t_layers)
-    
-#     # # Analog two-point (discrete approximation) - scaled for 2-qubit case
-#     # var_unitary_2pt = 0.5 + 0.5 * np.exp(-8 * gamma * t_layers) - np.exp(-4 * gamma * t_layers)
-
-#     # Effective flip rate for local Z_i (anticommuting channels): r_i = γ_Xi + γ_XX = 2γ
-#     r_i = 2.0 * gamma
-
-#     # Ensemble mean of <Z_i>
-#     m = np.exp(-2.0 * r_i * t_layers)  # = exp(-4γ t)
-
-#     # Projector unraveling (absorbing on first anti-commute projector jump; rate 2 r_i = 4γ)
-#     var_projector = m * (1.0 - m)  # = e^{-4γ t}(1 - e^{-4γ t})
-
-#     # Standard (unitary) unraveling → telegraph ±1 with flip rate r_i
-#     var_standard = 1.0 - np.exp(-4.0 * r_i * t_layers)  # = 1 - e^{-8γ t}
-
-#     # # Analog 2-pt / Gaussian: stationary variance = 1/4 for this symmetric 2q case.
-#     # var_plateau = 0.25 * np.ones_like(t_layers)
-
-#     # Analog Gaussian kicks - scaled for 2-qubit case
-#     var_gaussian = 0.25 * np.ones_like(t_layers)
-    
-#     # Analog two-point (discrete approximation) - scaled for 2-qubit case
-#     var_unitary_2pt = 0.25 * np.ones_like(t_layers)
-    
-#     return {
-#         "standard": var_standard,
-#         "projector": var_projector,
-#         "unitary_gauss": var_gaussian,
-#         "unitary_2pt": var_unitary_2pt,
-#     }
 
 def theoretical_variance_formulas(t_layers: np.ndarray, gamma: float,
                                   *, scheme_params: dict[str, float] | None = None) -> dict[str, np.ndarray]:

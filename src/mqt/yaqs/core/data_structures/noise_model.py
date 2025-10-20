@@ -415,8 +415,8 @@ class NoiseModel:
         *,
         num_qubits: int = 0,
         # Hazard policy: relative boost with a cap (good defaults)
-        hazard_gain: float = 3.0,       # Λ_target ≈ hazard_gain * sum(γ) for analog group(s)
-        hazard_cap: float = 0.5,       # but not above this absolute cap per layer
+        hazard_gain: float = 1.0,       # Λ_target ≈ hazard_gain * sum(γ) for analog group(s)
+        hazard_cap: float = 0.0,       # but not above this absolute cap per layer
         # Gaussian discretization settings
         gauss_M: int = 11,
         gauss_k: float = 4.0,           # theta_max = gauss_k * sigma
@@ -445,10 +445,13 @@ class NoiseModel:
                 continue
             # choose target Λ; ensure gain >= 1
             gain = max(1.0, float(hazard_gain))
+            print(f"gain: {gain}")
             Lambda_target = min(gain * Gamma, float(hazard_cap)) if hazard_cap > 0 else gain * Gamma
+            print(f"Gamma: {Gamma}, Lambda_target: {Lambda_target}")
             # if Gamma << cap, Λ_target ≈ gain*Gamma; otherwise cap dominates
             # avoid s*>1 (would *reduce* hazard below physical): clamp at 1-eps
             s_star = min(Gamma / max(Lambda_target, 1e-16), 1.0 - 1e-9)
+            print(f"s_star: {s_star}")
             # pick scheme for analog_auto; for explicit gauss/2pt we keep that scheme
             scheme = unr
             if unr == "analog_auto":

@@ -2,10 +2,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 from qutip import sigmax, sigmay, sigmaz, qeye, tensor, sesolve, basis
 
-from ..worker_functions.qiskit_simulators import run_qiskit_exact, run_qiskit_mps
-from ..worker_functions.yaqs_simulator import run_yaqs, build_noise_models
-from ..worker_functions.qiskit_noisy_sim import qiskit_noisy_simulator
-from ..worker_functions.plotting import plot_avg_bond_dims
+from mqt.yaqs.codex_experiments.worker_functions.qiskit_simulators import run_qiskit_exact, run_qiskit_mps
+from mqt.yaqs.codex_experiments.worker_functions.yaqs_simulator import run_yaqs, build_noise_models
+from mqt.yaqs.codex_experiments.worker_functions.qiskit_noisy_sim import qiskit_noisy_simulator
+from mqt.yaqs.codex_experiments.worker_functions.plotting import plot_avg_bond_dims
 
 from qiskit import QuantumCircuit
 from qiskit.quantum_info import Pauli
@@ -199,22 +199,22 @@ def find_required_trajectories(
 
 if __name__ == "__main__":
     # Simulation parameters
-    num_qubits = 10
-    num_layers = 30
+    num_qubits = 12
+    num_layers = 20
     tau = 0.1
-    noise_strength = 0.01
+    noise_strength = 0.1
     
     # ========== MODE SELECTION ==========
     # For small systems: Set run_density_matrix=True and specify threshold_mse
     # For large systems: Set run_density_matrix=False and specify fixed_trajectories
-    run_density_matrix = False  # Set to False for large systems (>12 qubits)
+    run_density_matrix = True  # Set to False for large systems (>12 qubits)
     enable_qiskit_mps = True
     enable_yaqs_standard = True
     enable_yaqs_projector = True
-    enable_yaqs_unitary_2pt = False
-    enable_yaqs_unitary_gauss = False
+    enable_yaqs_unitary_2pt = True
+    enable_yaqs_unitary_gauss = True
     threshold_mse = 5e-4  # Target MSE threshold (only used if run_density_matrix=True)
-    fixed_trajectories = 50  # Number of trajectories for large systems (only used if run_density_matrix=False)
+    fixed_trajectories = 500  # Number of trajectories for large systems (only used if run_density_matrix=False)
     # ====================================
     
     print("="*70)
