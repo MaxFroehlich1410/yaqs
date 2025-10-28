@@ -1,3 +1,5 @@
+import os
+import pickle
 import numpy as np
 import matplotlib.pyplot as plt
 from qutip import sigmax, sigmay, sigmaz, qeye, tensor, sesolve, basis
@@ -6,11 +8,41 @@ from mqt.yaqs.codex_experiments.worker_functions.qiskit_simulators import run_qi
 from mqt.yaqs.codex_experiments.worker_functions.yaqs_simulator import run_yaqs, build_noise_models
 from mqt.yaqs.codex_experiments.worker_functions.qiskit_noisy_sim import qiskit_noisy_simulator
 from mqt.yaqs.codex_experiments.worker_functions.plotting import plot_avg_bond_dims
+from mqt.yaqs.core.libraries.circuit_library import create_ising_circuit, create_heisenberg_circuit, qaoa_ising_layer, hea_layer
 
 from qiskit import QuantumCircuit
 from qiskit.quantum_info import Pauli
 from qiskit_aer.noise.errors import PauliLindbladError
 from qiskit_aer.noise import NoiseModel as QiskitNoiseModel
+
+def _format_float_short(value: float) -> str:
+    """Format floats compactly for filenames (e.g., 0.1 -> 0p1)."""
+    return f"{value:.4g}".replace('.', 'p')
+
+def _build_experiment_name(
+    num_qubits: int,
+    num_layers: int,
+    tau: float,
+    noise_strength: float,
+    run_density_matrix: bool,
+    threshold_mse: float,
+    fixed_trajectories: int,
+    basis_label: str,
+) -> str:
+    tokens = [
+        "unraveling_eff",
+        f"N{num_qubits}",
+        f"L{num_layers}",
+        f"tau{_format_float_short(tau)}",
+        f"noise{_format_float_short(noise_strength)}",
+        f"basis{basis_label}",
+        "modeDM" if run_density_matrix else "modeLarge",
+    ]
+    if run_density_matrix:
+        tokens.append(f"mse{_format_float_short(threshold_mse)}")
+    else:
+        tokens.append(f"traj{fixed_trajectories}")
+    return "_".join(tokens)
 
 def staggered_magnetization(z, num_qubits):
     return np.sum([(-1)**i * z[i] for i in range(num_qubits)]) / num_qubits
@@ -35,6 +67,30 @@ def xy_trotter_layer(N, tau, order="YX") -> QuantumCircuit:
         apply_pairwise("rxx")
         apply_pairwise("ryy")
     
+    return qc
+
+
+def xy_trotter_layer_longrange(
+    N: int,
+    tau: float,
+    order: str = "YX",
+) -> QuantumCircuit:
+    """Create one XY Trotter step with a single periodic boundary link.
+
+    Starts from the nearest-neighbor XY layer (open chain) and adds the
+    boundary coupling (N-1, 0) to make the quench effectively periodic
+    with only one long-range link.
+    """
+    qc = xy_trotter_layer(N, tau, order=order)
+
+    a, b = N - 1, 0
+    if order == "YX":
+        qc.ryy(2 * tau, a, b)
+        qc.rxx(2 * tau, a, b)
+    else:
+        qc.rxx(2 * tau, a, b)
+        qc.ryy(2 * tau, a, b)
+
     return qc
 
 
@@ -237,7 +293,8 @@ if __name__ == "__main__":
             init_circuit.x(i)
     
     # One Trotter step
-    trotter_step = xy_trotter_layer(num_qubits, tau)
+    trotter_step = qaoa_ising_layer(num_qubits)
+    basis_label = "QAOA_layer"  # XY Trotter with YX ordering
 
     # Initialize noise models (YAQS)
     processes = [
@@ -435,9 +492,11 @@ if __name__ == "__main__":
     method_names = list(results.keys())
     
     # Process Qiskit MPS bonds
-    if qiskit_bonds is not None and "per_layer_mean_across_shots" in qiskit_bonds:
-        q_mean = np.asarray(qiskit_bonds["per_layer_mean_across_shots"])
-        bond_data_for_plot["Qiskit MPS"] = q_mean[:num_layers]
+    if isinstance(qiskit_bonds, dict):
+        q_mean_val = qiskit_bonds.get("per_layer_mean_across_shots")
+        if q_mean_val is not None:
+            q_mean = np.asarray(q_mean_val)
+            bond_data_for_plot["Qiskit MPS"] = q_mean[:num_layers]
     
     # Process YAQS bonds (mean across trajectories; drop initial and final columns)
     yaqs_method_map = {
@@ -457,6 +516,24 @@ if __name__ == "__main__":
         else:
             mean_layers = mean_per_col
         bond_data_for_plot[method_name] = mean_layers[:num_layers]
+
+    # Prepare output directory and filenames based on parameters
+    base_dir = os.path.dirname(__file__)
+    experiment_name = _build_experiment_name(
+        num_qubits,
+        num_layers,
+        tau,
+        noise_strength,
+        run_density_matrix,
+        threshold_mse,
+        fixed_trajectories,
+        basis_label,
+    )
+    output_dir = os.path.join(base_dir, experiment_name)
+    os.makedirs(output_dir, exist_ok=True)
+    png_path = os.path.join(output_dir, f"{experiment_name}.png")
+    pkl_path = os.path.join(output_dir, f"{experiment_name}.pkl")
+    md_path = os.path.join(output_dir, f"{experiment_name}.md")
 
     # Create visualization with 3 subplots
     fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(18, 6))
@@ -515,9 +592,89 @@ if __name__ == "__main__":
     ax3.legend(fontsize=8, loc='upper left')
     ax3.grid(True, linestyle="--", alpha=0.5)
     
-    plt.tight_layout()
-    plt.savefig("unraveling_trajectory_efficiency.png", dpi=300)
+    # Figure title with key parameters
+    mode_label = "DM" if run_density_matrix else "LargeSystem"
+    title = (
+        f"N={num_qubits}, L={num_layers}, tau={tau}, noise={noise_strength}, "
+        f"basis={basis_label}, mode={mode_label}"
+    )
+    if run_density_matrix:
+        title += f", target MSE<{threshold_mse:.2e}"
+    else:
+        title += f", fixed traj={fixed_trajectories}"
+    fig.suptitle(title, fontsize=14)
+
+    # Save data to pickle alongside the plot
+    data_to_save = {
+        "num_qubits": num_qubits,
+        "num_layers": num_layers,
+        "tau": tau,
+        "noise_strength": noise_strength,
+        "run_density_matrix": run_density_matrix,
+        "threshold_mse": threshold_mse if run_density_matrix else None,
+        "fixed_trajectories": None if run_density_matrix else fixed_trajectories,
+        "method_names": method_names,
+        "results": results,
+        "exact_stag": exact_stag,
+        "layers": layers,
+        "bond_data_for_plot": bond_data_for_plot,
+    }
+    with open(pkl_path, "wb") as f:
+        pickle.dump(data_to_save, f)
+
+    plt.tight_layout(rect=(0, 0, 1, 0.95))
+    plt.savefig(png_path, dpi=300)
     plt.show()
     
-    print("\nPlot saved as 'unraveling_trajectory_efficiency.png'")
+    print(f"\nSaved plot to: {png_path}")
+    print(f"Saved data to: {pkl_path}")
+
+    # Save markdown summary
+    md_lines = []
+    md_lines.append(f"# Trajectory Efficiency Comparison")
+    md_lines.append("")
+    md_lines.append(f"**Experiment**: `{experiment_name}`")
+    md_lines.append("")
+    md_lines.append("## Parameters")
+    md_lines.append("")
+    md_lines.append(f"- **N (qubits)**: {num_qubits}")
+    md_lines.append(f"- **L (layers)**: {num_layers}")
+    md_lines.append(f"- **tau**: {tau}")
+    md_lines.append(f"- **noise strength**: {noise_strength}")
+    md_lines.append(f"- **basis**: {basis_label}")
+    md_lines.append(f"- **mode**: {'DM' if run_density_matrix else 'LargeSystem'}")
+    if run_density_matrix:
+        md_lines.append(f"- **target MSE threshold**: {threshold_mse:.2e}")
+    else:
+        md_lines.append(f"- **fixed trajectories**: {fixed_trajectories}")
+    md_lines.append("")
+    md_lines.append("## Results Summary")
+    md_lines.append("")
+    if run_density_matrix:
+        md_lines.append("| Method | Trajectories | Final MSE | Speedup |")
+        md_lines.append("|---|---:|---:|---:|")
+        baseline = results.get("YAQS Standard", {}).get("trajectories", None)
+        if baseline is None and len(method_names) > 0:
+            baseline = results[method_names[0]]["trajectories"]
+        for method in method_names:
+            data = results[method]
+            mse_str = f"{data['mse']:.2e}" if data['mse'] is not None else "N/A"
+            speedup_val = (baseline / data["trajectories"]) if baseline else None
+            speedup_str = f"{speedup_val:.2f}x" if speedup_val else "N/A"
+            md_lines.append(f"| {method} | {data['trajectories']} | {mse_str} | {speedup_str} |")
+    else:
+        md_lines.append("| Method | Trajectories | Final Stag Mag |")
+        md_lines.append("|---|---:|---:|")
+        for method in method_names:
+            data = results[method]
+            final_stag = data["stag"][-1] if data["stag"] is not None else None
+            stag_str = f"{final_stag:.6f}" if final_stag is not None else "N/A"
+            md_lines.append(f"| {method} | {data['trajectories']} | {stag_str} |")
+    md_lines.append("")
+    md_lines.append(f"![Plot]({os.path.basename(png_path)})")
+    md_content = "\n".join(md_lines)
+    with open(md_path, "w", encoding="utf-8") as f:
+        f.write(md_content)
+
+    print(f"Saved markdown to: {md_path}")
 
