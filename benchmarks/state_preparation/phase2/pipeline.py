@@ -194,6 +194,7 @@ _METHOD_FAMILY_BY_METHOD_ID = {
     "topdown_impact_iterative": "topdown_pruning",
     "energy_adapt_vqe": "energy_adapt_vqe",
     "layerwise_bmpd_crn_legacy_v1": "layerwise_bmpd_legacy",
+    "layerwise_bmpd_cross_crn_refresh_q8_exploratory": "layerwise_bmpd",
     "standard_vqa": "standard_vqa",
     "topdown_magnitude_pruning_legacy_v1": "topdown_magnitude_pruning_legacy",
     "krotov": "krotov",
@@ -218,6 +219,7 @@ _PHASE1_FIXTURE_METADATA = {
 }
 _LEGACY_METHOD_IDS = frozenset({
     "layerwise_bmpd_crn_legacy_v1",
+    "layerwise_bmpd_cross_crn_refresh_q8_exploratory",
     "standard_vqa",
     "topdown_magnitude_pruning_legacy_v1",
 })
