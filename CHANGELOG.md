@@ -11,35 +11,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Added
 
-- added an exploratory q8 noisy-Krotov refresh study that exports the retained noiseless depth-four circuit as a portable producer-verified checkpoint, reuses it without repeating layerwise growth, refreshes three cross-trajectory training maps every five updates, and compares the refreshed circuit with the historical fixed-three circuit on batched common fresh maps with event-level evidence ([**@MaxFroehlich1410**])
-- added an explicitly exploratory, resumable single-target q8 noisy-Krotov calibration runner with the exact historical stage sequence by default, paired fresh pre/post evaluation, raw trajectory differences, and checksum-bound provenance and artifacts ([**@MaxFroehlich1410**])
-- added the prospective WP22H operational artifact ceremony: a six-stage, non-numerical, source-locked workflow that requires real authenticated pilot and screening custody, publishes immutable derivation bundles, forbids held confirmatory manifest/entropy access, and requires independent review of both its scientific readiness receipt and terminal run-receipt/bundle-index inventory before the unchanged WP23 execution path ([**@MaxFroehlich1410**])
-- added prospective WP22G pre-reveal confirmation hardening with a required source/calibration-bound prior-exposure ledger and target ID/seed collision rejection, private nofollow entropy reads, a strict sealed-artifact option allowlist, explicit outside-repository output custody, canonical whole-plan/session/job binding, crash-safe immutable first-attempt recovery, authenticated resource-limit proofs, independent-stream pairability records, and append-only content-addressed study snapshots whose externally custodied head is published before dispatch and advanced after each terminal cell; the primary WP23 route adds no new scientific behavior, while tiered secondary evaluation remains separately versioned exploratory WP24 work ([**@MaxFroehlich1410**])
-- added WP22F production pilot and screening custody, q6-only nuisance and compute-cap calibration, exact raw-evidence promotion replay, configuration-specific schedule and executable-binding sealing, source-locked final-confirmation creation, request-v2 confirmation authentication, a frozen real confirmation executor that remains target-dormant until WP23, and production-custody-only raw-trajectory primary analysis ([**@MaxFroehlich1410**])
-- added the WP22E repository-owned production executors with exact context-bound job resolution, real scheduled pipeline and two-prefix operator-growth dispatch, immutable source-addressed attempt manifests, direct execution-source closure, single-pass fixed-map/fidelity and raw-trajectory custody, q6 pathwise pilot diagnostics, structured failure/resume handling, complete result reopening, and a dormant synthetic-only confirmation path ([**@MaxFroehlich1410**])
-- added the WP22D fail-closed training execution context and opt-in CLI with external entropy custody, complete job/plan/source fingerprints, exact smoke/pilot/screen cardinalities, pre-mutation whole-plan validation, q12 role isolation, repository-owned executor discovery, and append-only first-attempt confirmatory outcomes ([**@MaxFroehlich1410**])
-- added the WP22C schedule-aware optimizer engine with executable-binding closure, exact trajectory and mixture membership, validation-blind Krotov/Adam/SPSA/operator-growth updates, recoverable checkpoints, complete multistart selection, prospective compute-cap enforcement, and byte-identical restart with historical receipt/work revalidation ([**@MaxFroehlich1410**])
-- added the WP22B width-complete executable binding catalog with checksum-stable q6 builders, non-retuned q12 pilot projections, bounded repository smoke adapters, complete pilot and screening coverage, and identity-preserving dormant confirmation resolution; the TFIM Energy-ADAPT smoke is truthfully isolated as an analytic API preflight and not evidence for its unsupported preregistered noisy treatment ([**@MaxFroehlich1410**])
-- added checksum-sealed WP22A operational policies, noisy-training schedule semantics, deterministic trajectory membership and seed-derivation formulas, and typed publication-to-implementation bindings for the prospective Phase II study; executable catalogs and numerical study evidence remain assigned to WP22B through WP22F ([**@MaxFroehlich1410**])
-- added first-class random, magnitude, one-shot impact, and iterative impact top-down pruning pipelines with shared-parameter gate-occurrence shifts, compiled-entangler-group removal, deterministic ties and parameter remapping, per-round objective/map provenance, resumable relaxation boundaries, reachable native-resource strata, typed infeasibility, optional noisy fine-tuning, and independently seeded fresh testing ([**@MaxFroehlich1410**])
-- added target-bound fair Phase II controls for noiseless, fixed-depth, independent fixed-CRN, resampled, modern cross-CRN, and unpruned state preparation, with the modern cross policy separated from the WP19 legacy reproduction; publishable exact parameter-shift Adam and fresh-objective SPSA competitors; target-bound noisy projector-cost operator growth with an analytic reference-only helper and target-bound TFIM-only energy ADAPT-VQE; and checksum-sealed native-resource, work-ledger, Pareto, full-randomness pairing, and full-protocol event-coupling evidence ([**@MaxFroehlich1410**])
-- added faithful and corrected bottom-up layerwise BMPD noisy-fine-tuning profiles, a sealed five-target historical TFIM reconstruction fixture, exact legacy RandomState and trajectory-seed compatibility, independently seeded v2 checkpoint selection, and root-locked single-snapshot five-row reproduction reporting ([**@MaxFroehlich1410**])
-- added checksum-verified Phase II multi-stage artifacts, explicit source and dependency fingerprints, interruption-safe and stale-writer-safe stage resume, sealed noisy-objective and authorized-target binding, portable external checkpoints, validation-selected checkpoint handoff, trusted circuit decoding, materialization-attempt accounting, and ordered parallel final evaluation with canonical JSONL/CSV/manifest reporting ([**@MaxFroehlich1410**])
-- added benchmark-grade fixed-rate noisy Krotov stages with domain-separated trajectory seeds, immutable replayable CRN ensembles, scaled standard and frozen historical noise profiles, refresh/resume schedules, checkpoint-validation selection, explicit cross-update diagnostics, and normalized work accounting ([**@MaxFroehlich1410**])
-- added versioned Phase II target-population generators and staged-training schemas with custodied manifest commitments, a pre-execution v2 split between spectrum-only manifest generation and authorized state-vector materialization, deterministic pipeline identities, checkpoint lineage, and Phase I compatibility guards ([**@MaxFroehlich1410**])
-- added a checksum-sealed Phase II state-preparation preregistration, complete screening-evidence and mechanical promotion controls, matched confirmatory contrasts, sample-size design guard, and commit-addressed legacy-evidence audit ([**@MaxFroehlich1410**])
-- added a JSON-configurable CLI with smoke, minimum, and full presets plus train-once execution, filtering, dry runs, and safe resume behavior for state-preparation benchmarks ([**@MaxFroehlich1410**])
-- added atomic, provenance-aware reporting, resumability, parameter checkpoints, and trajectory sidecars for state-preparation benchmarks ([**@MaxFroehlich1410**])
-- added reproducible, domain-separated independent test evaluation with uncertainty statistics for state-preparation benchmarks ([**@MaxFroehlich1410**])
-- added a reusable Krotov method adapter with deterministic initialization, train-once artifacts, training identities, and versioned parameter checkpoints for state-preparation benchmarks ([**@MaxFroehlich1410**])
-- added centralized logical and final native circuit statistics for state-preparation benchmarks ([**@MaxFroehlich1410**])
-- added immutable final-circuit materialization and exact angle-dependent Ballarin product-Pauli noise for state-preparation benchmarks ([**@MaxFroehlich1410**])
-- added a traceable Quantinuum-native compiler for state-preparation circuits ([**@MaxFroehlich1410**])
-- added a validated gate-local registry for all ten standard state-preparation noise configurations ([**@MaxFroehlich1410**])
-- added an exact independent product-Pauli sampler for state-preparation noise benchmarks ([**@MaxFroehlich1410**])
-- added a validated gate-local noise-provider interface for parameterized-circuit trajectory simulation ([**@MaxFroehlich1410**])
-- added validated, immutable loading and lookup APIs for state-preparation benchmark target fixtures ([**@MaxFroehlich1410**])
-- added versioned, strictly validated configuration and result schemas for reproducible state-preparation benchmarks ([**@MaxFroehlich1410**])
+- added a direct, resumable q8 noisy-Krotov refresh experiment that reuses stored noiseless parameters, refreshes three training trajectories every five updates, and performs paired fresh-map evaluation without the former benchmark-study infrastructure ([**@MaxFroehlich1410**])
 - added MPS-based Krotov-inspired discrete adjoint optimizer for parameterized circuits (online/batch/hybrid variants) in new `mqt.yaqs.optimization` subpackage ([**@MaxFroehlich1410**])
 - added MPO zip-up as default long-range gate application method ([#449]) ([**@aaronleesander**])
 - parallelized MPO equivalence checker ([#448]) ([**@aaronleesander**])
@@ -53,7 +25,6 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Changed
 
-- froze the documented state-preparation noise, sampling, seed, circuit-count, preset, uncertainty, and result-schema conventions; the minimum CLI preset now uses the benchmark-defined `1s_all` and `2s_2q` configurations ([**@MaxFroehlich1410**])
 - changed default to TEBD in digital circuit simulation ([#445]) ([**@aaronleesander**])
 - refactored public API to use Simulator, Result, and EquivalenceChecker classes ([#430]) ([**@aaronleesander**])
 - sped up and stabilized test suite ([#428]) ([**@aaronleesander**])
@@ -61,6 +32,8 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 - changed solver to representation and updated noise-free simulation paths ([#422]) ([**@aaronleesander**])
 
 ### Removed
+
+- removed the unreleased state-preparation benchmark matrix, Phase II work-package machinery, and unrelated tracked experiment drivers in favor of the focused noisy-Krotov experiment ([**@MaxFroehlich1410**])
 
 ### Fixed
 
@@ -205,7 +178,6 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- Contributor -->
 
-[**@MaxFroehlich1410**]: https://github.com/MaxFroehlich1410
 [**@aaronleesander**]: https://github.com/aaronleesander
 [**@denialhaag**]: https://github.com/denialhaag
 [**@Gauthameshwar**]: https://github.com/Gauthameshwar

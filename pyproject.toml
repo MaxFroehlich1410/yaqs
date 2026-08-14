@@ -90,7 +90,7 @@ filterwarnings = ["error"]
 
 [tool.coverage]
 run.branch = true
-run.source = ["mqt.yaqs", "benchmarks.state_preparation"]
+run.source = ["mqt.yaqs"]
 report.exclude_also = [
     '\.\.\.',
     'if TYPE_CHECKING:',
@@ -167,6 +167,7 @@ known-first-party = ["mqt.yaqs"]
 "tests" = ["T20", "INP001"]
 "docs/**" = ["T20", "INP001"]
 "scripts" = ["T20", "INP001"]
+"experiments/*.py" = ["BLE001", "DOC", "T20"]
 "noxfile.py" = ["T20", "TID251"]
 
 [tool.ruff.lint.pydocstyle]

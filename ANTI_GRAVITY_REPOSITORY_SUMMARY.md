@@ -17,8 +17,8 @@ Important top-level locations:
 - `src/mqt/yaqs/`: package source.
 - `tests/`: unit and integration tests.
 - `docs/`: user documentation and examples.
-- `experiments/`: exploratory scripts and generated artifacts; useful as examples, but
-  not part of the stable package API.
+- `experiments/`: the direct noisy-Krotov refresh experiment and its short run guide;
+  neither is part of the stable package API.
 - `pyproject.toml`: dependencies, pytest config, ruff config, and tooling groups.
 - `AGENTS.md`: repository-specific development commands and contribution rules.
 
@@ -100,6 +100,9 @@ The relevant implementation lives in `src/mqt/yaqs/optimization/`:
   truncation/readout/options dataclasses, forward and backward sweeps, sample
   contributions, state-preparation losses/metrics, noisy trajectory handling, and
   online/batch/hybrid training entry points.
+- `krotov_ensembles.py`: deterministic fixed-map sampling and trajectory-seed helpers
+  used by the refresh experiment.
+- `gate_noise.py`: the gate-local noise-provider interface used during noisy training.
 - `__init__.py`: exported optimization API.
 
 Names to search for in `krotov.py`:
@@ -125,8 +128,9 @@ Useful tests for this task:
 
 - `tests/optimization/test_krotov.py`: Krotov optimizer behavior, state-preparation
   helpers, noisy state-preparation helpers, and parameterized-circuit interactions.
-- `tests/optimization/test_supervised_qml_benchmarks.py`: benchmark helper coverage for
-  optimization-related experiment support.
+- `tests/optimization/test_krotov_ensembles.py`: fixed-map sampling and replay.
+- `tests/optimization/test_noisy_krotov_refresh_minimal.py`: target reconstruction,
+  refresh cadence, historical noise, checkpointing, evaluation, and exact resume.
 - `tests/core/libraries/test_circuit_library.py`: ansatz and circuit-library coverage.
 - `tests/digital/test_digital_tjm.py`: digital noisy-circuit behavior, gate modes,
   long-range gates, measurements, and MPS-vs-Qiskit consistency checks.
@@ -166,6 +170,6 @@ submitting changes.
 
 ## Repo-State Notes For Agents
 
-At the time this note was written, the active branch was `Noisy-State-Preparation`.
-The working tree contained local modifications and untracked experiment files. Treat
-those as existing user work unless explicitly instructed otherwise.
+The narrow experiment is maintained on `codex/minimal-noisy-krotov`. Generated outputs
+belong outside version control; treat local experiment files as user work unless
+explicitly instructed otherwise.
