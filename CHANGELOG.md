@@ -11,6 +11,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Added
 
+- restored the reproducible state-preparation targets and concise scientific benchmark definition, with validated target loading, exact standard and Ballarin noise profiles, method adapters, and a resumable train-once/evaluate-many runner ([**@MaxFroehlich1410**])
 - added a direct, resumable q8 noisy-Krotov refresh experiment that reuses stored noiseless parameters, refreshes three training trajectories every five updates, and performs paired fresh-map evaluation without the former benchmark-study infrastructure ([**@MaxFroehlich1410**])
 - added MPS-based Krotov-inspired discrete adjoint optimizer for parameterized circuits (online/batch/hybrid variants) in new `mqt.yaqs.optimization` subpackage ([**@MaxFroehlich1410**])
 - added MPO zip-up as default long-range gate application method ([#449]) ([**@aaronleesander**])
