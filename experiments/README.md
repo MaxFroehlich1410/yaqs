@@ -1,4 +1,58 @@
-# Minimal noisy-Krotov refresh experiment
+# Noisy state-preparation experiments
+
+## Canonical q6 causal study
+
+`noisy_krotov_causal_study.py` tests whether noisy fine-tuning improves fresh
+noisy fidelity, rather than merely fitting a small set of training
+trajectories. It creates one layerwise noiseless checkpoint for the canonical
+six-qubit `tfim_critical` target and starts every arm from the exact same
+parameters. The five arms are:
+
+- the frozen pretrained checkpoint;
+- an equally long noiseless continuation;
+- three-trajectory cross updates with fixed common random numbers (CRN);
+- the same updates with CRN refreshed every five iterations; and
+- the same updates with trajectories resampled every iteration.
+
+A disjoint fixed ensemble is used only for checkpoint selection. Final
+evaluation uses fresh held-out maps, and every map is replayed across all five
+selected circuits for paired comparison. The standard profile is
+`depolarizing_1s_all`; its Pauli jump probabilities are state independent, so
+the paired replay remains unbiased for each circuit.
+
+Run the registered defaults with:
+
+```console
+uv run python -m experiments.noisy_krotov_causal_study \
+  --output-root /path/outside/the/repository/q6-causal-study
+```
+
+The defaults use 100 noiseless updates at each depth from one through four,
+200 fine-tuning updates, 3 training trajectories, a refresh interval of 5,
+12 validation trajectories, 500 final trajectories, and 3 independent noisy-
+training replicates. Resume using the same arguments plus `--resume`.
+Pretraining is checkpointed at depth boundaries, fine-tuning at validation
+boundaries, and evaluation after every batch. The output includes every sampled
+map, raw trajectory fidelity, paired difference, selected parameter vector,
+training trace, seed audit, and a replicate-level Student-t summary.
+
+For a quick end-to-end check, use:
+
+```console
+uv run python -m experiments.noisy_krotov_causal_study \
+  --output-root /tmp/q6-causal-smoke \
+  --pretraining-iterations-per-depth 1 \
+  --finetune-updates 1 \
+  --refresh-interval 1 \
+  --validation-interval 1 \
+  --training-trajectories 1 \
+  --validation-trajectories 1 \
+  --test-trajectories 2 \
+  --test-batch-size 1 \
+  --replicates 1
+```
+
+## Legacy q8 refresh experiment
 
 This directory retains one exploratory experiment: fine-tune the saved noiseless q8,
 depth-four circuit against three noisy trajectories, replace those trajectories every
@@ -24,7 +78,7 @@ the retained vector checksum.
 ## Full run
 
 ```console
-uv run python experiments/noisy_krotov_refresh_minimal.py \
+uv run python -m experiments.noisy_krotov_refresh_minimal \
   --bundle-root /path/to/pretrained-bundle \
   --output-root /path/to/refresh5-run
 ```
@@ -38,7 +92,7 @@ evaluation seeds rather than splitting one optimizer trajectory set across proce
 Resume an interrupted run with the same scientific arguments:
 
 ```console
-uv run python experiments/noisy_krotov_refresh_minimal.py \
+uv run python -m experiments.noisy_krotov_refresh_minimal \
   --output-root /path/to/refresh5-run \
   --resume
 ```
