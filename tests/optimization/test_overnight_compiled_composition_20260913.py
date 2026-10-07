@@ -277,6 +277,7 @@ def test_promotion_requires_strongest_control_and_complete_panel(monkeypatch: py
     assert driver.analyze(records[:-1])["status"] == "incomplete"
 
 
+@pytest.mark.usefixtures("isolated_overnight_custody")
 def test_prepare_is_read_only_and_binds_source_arrays(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Protocol reconstruction rejects edited sources and never invokes the initializer/compiler during prepare."""
     source, _ = problem()

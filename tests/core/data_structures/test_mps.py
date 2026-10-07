@@ -57,7 +57,7 @@ def _permuted_periodic_wrap_gate(gate4: np.ndarray) -> np.ndarray:
             idx_bond = 2 * b + a
             p_perm[idx_bond, idx_merged] = 1.0
     g = np.asarray(gate4, dtype=np.complex128)
-    return p_perm.conj().test_tensor @ g @ p_perm
+    return p_perm.conj().T @ g @ p_perm
 
 
 def _dense_embed_adjacent_two_site(length: int, site_left: int, gate4: np.ndarray) -> np.ndarray:
@@ -100,7 +100,7 @@ def _dense_embed_periodic_wrap_two_site(length: int, gate4: np.ndarray) -> np.nd
         u_fwd = _dense_embed_adjacent_two_site(length, i, sw) @ u_fwd
     g_merged = _permuted_periodic_wrap_gate(g)
     g_nn = _dense_embed_adjacent_two_site(length, length - 2, g_merged)
-    return np.asarray(u_fwd.conj().test_tensor @ g_nn @ u_fwd, dtype=np.complex128)
+    return np.asarray(u_fwd.conj().T @ g_nn @ u_fwd, dtype=np.complex128)
 
 
 def _dense_embed_two_site_little_endian(length: int, site_left: int, site_right: int, gate4: np.ndarray) -> np.ndarray:
@@ -470,7 +470,7 @@ def test_mps_apply_local_l2_periodic_wrap_matches_permuted_nn() -> None:
     length = 2
     rng = np.random.default_rng(2026)
     g_random = (rng.standard_normal((4, 4)) + 1j * rng.standard_normal((4, 4))).astype(np.complex128)
-    gate4 = (g_random + g_random.conj().test_tensor) / 2
+    gate4 = (g_random + g_random.conj().T) / 2
     g_merged = _permuted_periodic_wrap_gate(gate4)
 
     mps_wrap = MPS(length, state="random", pad=8)
@@ -557,7 +557,7 @@ def test_mps_mixed_expectation_l2_periodic_wrap_matches_permuted_nn() -> None:
     length = 2
     rng = np.random.default_rng(2026)
     g_random = (rng.standard_normal((4, 4)) + 1j * rng.standard_normal((4, 4))).astype(np.complex128)
-    gate4 = (g_random + g_random.conj().test_tensor) / 2
+    gate4 = (g_random + g_random.conj().T) / 2
     g_merged = _permuted_periodic_wrap_gate(gate4)
 
     mps_wrap = MPS(length, state="random", pad=8)
@@ -1049,7 +1049,7 @@ def test_haar_random_shapes_and_isometries() -> None:
 
         q_mat = tensor.reshape(d * chi_l, chi_r)
         ident = np.eye(chi_r, dtype=np.complex128)
-        np.testing.assert_allclose(q_mat.conj().test_tensor @ q_mat, ident, atol=1e-12)
+        np.testing.assert_allclose(q_mat.conj().T @ q_mat, ident, atol=1e-12)
 
     assert np.isclose(mps.norm(), 1.0, atol=1e-12)
 

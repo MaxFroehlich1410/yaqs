@@ -128,6 +128,7 @@ def test_changed_child_or_omitted_input_cannot_be_adopted(tmp_path: Path, new_fi
         diagnostic.authenticate_files(files)
 
 
+@pytest.mark.usefixtures("isolated_overnight_custody")
 def test_prepare_only_and_incomplete_summary_never_run_measurements(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

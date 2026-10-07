@@ -340,6 +340,7 @@ def test_prior_manifest_requires_all_raw_files_and_keeps_failure(
         audit.input_panel(tmp_path)
 
 
+@pytest.mark.usefixtures("isolated_overnight_custody")
 def test_protocol_cannot_omit_input_manifest_entries(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Freshly signed metadata does not authorize dropping expected prior records."""
     prior = tmp_path / "prior"

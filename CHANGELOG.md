@@ -13,6 +13,8 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Added
 
+- made overnight preparation tests independent of excluded historical run receipts ([**@MaxFroehlich1410**])
+
 - made the historical plot scripts portable and safe to import, with PNG smoke tests ([**@MaxFroehlich1410**])
 
 - published the experimental source, supporting tests, protocols, and manuscript source while keeping generated experiment and manuscript artifacts local ([**@MaxFroehlich1410**])
