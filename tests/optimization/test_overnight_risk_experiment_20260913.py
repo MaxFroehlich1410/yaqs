@@ -223,7 +223,7 @@ def test_tail_metrics_use_all_eleven_and_reject_missing_conditions() -> None:
         risk_experiment.metrics(fidelities)
 
 
-@pytest.mark.usefixtures("isolated_overnight_custody")
+@pytest.mark.usefixtures("synthetic_overnight_starts")
 def test_prepare_only_freezes_exact_six_method_panel_and_original_sources(tmp_path: Path) -> None:
     """Protocol creation does no numerical work and rejects re-signed temperature/start changes."""
     with patch.object(risk_objective, "loss_gradient", side_effect=AssertionError("no preparation simulation")):

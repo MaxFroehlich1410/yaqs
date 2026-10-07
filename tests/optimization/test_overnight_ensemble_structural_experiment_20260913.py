@@ -322,7 +322,7 @@ def test_invalid_budgets_rejected_before_simulation(updates: dict[str, Any]) -> 
         config(**updates)
 
 
-@pytest.mark.usefixtures("isolated_overnight_custody")
+@pytest.mark.usefixtures("synthetic_overnight_starts")
 def test_prepare_only_authenticates_every_start_without_numerical_work(tmp_path: Path) -> None:
     """Prepare fixes one production setting and rejects even re-signed altered starts."""
     with patch.object(
