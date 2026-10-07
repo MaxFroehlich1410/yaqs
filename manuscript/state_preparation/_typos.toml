@@ -1,5 +1,0 @@
-# LaTeX package name and the verified surname of the Adam coauthor.
-# Preserve these exact spellings in the manuscript and bibliography.
-[default.extend-words]
-braket = "braket"
-Ba = "Ba"
