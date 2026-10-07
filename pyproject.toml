@@ -110,6 +110,7 @@ error-on-warning = true
 
 [tool.ty.src]
 exclude = [
+    "experiments/state_preparation_competitors/vendor/ballarin_comb/**",
     "docs/**",
 ]
 
@@ -124,6 +125,8 @@ default.extend-ignore-re = [
 wille = "wille"
 aer = "aer"
 ket   = "ket"
+braket = "braket" # LaTeX package name for bra-ket notation.
+writeable = "writeable" # NumPy flag spelling.
 
 
 [tool.repo-review.ignore]
@@ -164,7 +167,13 @@ future-annotations = true
 known-first-party = ["mqt.yaqs"]
 
 [tool.ruff.lint.per-file-ignores]
+# Preserve extracted upstream numerical code; wrappers/tests remain fully checked.
+"experiments/state_preparation_competitors/vendor/ballarin_comb/*.py" = ["ALL"]
 "tests" = ["T20", "INP001"]
+# These tests deliberately exercise internal Krotov validation/update helpers.
+"tests/optimization/test_krotov.py" = ["SLF001"]
+# Imports follow importorskip so plotting remains an optional test dependency.
+"tests/optimization/test_research_plot_scripts.py" = ["PLC0415"]
 "docs/**" = ["T20", "INP001"]
 "scripts" = ["T20", "INP001"]
 "experiments/*.py" = ["BLE001", "DOC", "T20"]

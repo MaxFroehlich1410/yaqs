@@ -13,6 +13,9 @@
     ".in": "POUND_STYLE"
   },
   "exclude": [
+    "experiments/state_preparation_competitors/vendor/ballarin_comb/(combdevice|noisy_combdevice|svd)\\.py",
+    "experiments/state_preparation_competitors/requirements[^/]*\\.txt",
+    "experiments/state_preparation_competitors/vendor/mnisq_aqce/[^/]*\\.txt",
     "^\\.[^/]+",
     "/\\.[^/]+",
     ".*\\.qasm",
@@ -20,6 +23,7 @@
     ".*\\.bib",
     ".*\\.css",
     ".*\\.json",
+    "manuscript/state_preparation/data/.*\\.csv",
     ".*\\.html",
     ".*\\.tfc",
     ".*\\.qc",

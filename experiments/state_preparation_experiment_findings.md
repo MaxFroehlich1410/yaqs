@@ -1,5 +1,49 @@
 # Noisy State-Preparation Experiment Findings
 
+Shared-adjoint refinement follow-up (2026-09-12): all 7040 deletion scores and
+all search decisions reproduce the exhaustive implementation. Reinvesting the
+saved CPU raises mean noisy fidelity to 80.955% for adaptive online Krotov and
+80.839% for Adam, versus 79.801% for compute-matched fixed Adam. Both pass the
+development screen; Krotov's +0.116 pp lead over structural Adam comes from
+only the two Haar pairs, while Adam wins all six structured pairs. See the
+[shared-adjoint findings](state_preparation_adjoint_restructuring_findings.md).
+
+Noisy restructuring follow-up (2026-09-12): the eight-case, 32-arm exact-score
+deletion-and-repair screen improves the three structured families by roughly
+1.3-1.7 pp over compute-matched fixed Adam, but loses on Haar. Adaptive online
+reaches the higher structural endpoint mean, without a consistent matched-CPU
+advantage; neither optimizer meets the +0.5 pp overall screen. Exhaustive
+deletion scoring consumes 85.2% of structural CPU. See the
+[noisy restructuring findings](state_preparation_noisy_restructuring_findings.md).
+
+Adaptive-online follow-up (2026-09-12): the matched 64-run screen is complete.
+Adaptive scaling improves online Krotov in all eight pairs, but every adaptive
+rate still loses to Adam 0.02 at both the endpoint and matched training CPU.
+See the [adaptive-online findings](state_preparation_adaptive_online_findings.md).
+
+Weighted optimization follow-up (2026-09-12): the matched 96-run screen is
+complete. Weighted sampling improves Adam more than Krotov; weighted Adam wins
+all eight pairs against each Krotov schedule at R32 and R128, with lower CPU
+cost. See the [weighted optimization findings](state_preparation_weighted_optimization_findings.md).
+
+Sampling-budget follow-up (2026-09-12): Adam remains ahead in the matched
+R=32/R=128 screen. A subsequent weighted no-factor diagnostic substantially
+improves gradient error per CPU second. Weighted optimizer training had not
+yet been run at that stage; the follow-up above now covers it. See the
+[sampling-budget findings](state_preparation_sampling_budget_findings.md).
+
+Statevector follow-up (2026-09-11): the four-family gradient/cross, tail-rate and
+CRN development screens are complete. All-online gave a small consistent
+endpoint gain; R=32 endpoint gradients remained noisy, so the conditional
+adaptive screen was deferred. See the
+[new findings](state_preparation_trajectory_diagnostics_findings.md).
+
+Calibration follow-up (2026-09-05): the original q6 causal and hybrid results
+used higher per-gate noise than the intended hardware-error targets. Preserve
+the historical findings below, but interpret those runs as higher-noise tests.
+The controlled corrected-noise reruns and independent channel checks are
+documented in [the calibration follow-up](state_preparation_calibrated_rerun_findings.md).
+
 - **Evidence review date:** 2026-09-04
 - **Current branch:** `codex/minimal-noisy-krotov`
 - **Latest experiment implementation commit:** `8f8308ad5c3dfb9aed0430c92464f6a1f416608f`

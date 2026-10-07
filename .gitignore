@@ -178,3 +178,37 @@ out/build
 
 node_modules/
 wheelhouse/
+
+# Opt-in Phase II training artifacts
+/state_preparation_phase2_results/
+
+# Local experiment output and scratch work
+/output/
+/tmp/
+/experiments/supervised_qml_benchmarks/
+/experiments/supervised_qml_noise_sweep/
+/experiments/*.npy
+/experiments/*.npz
+/experiments/*.csv
+/experiments/*.png
+/experiments/*.pdf
+/experiments/unitary_gate_tdvp_stress_benchmark.json
+/experiments/unitary_gate_tjm_support.json
+/experiments/overnight_state_preparation_20260913_0108/MANIFEST.json
+/experiments/overnight_state_preparation_20260913_0108/STARTUP.diff
+/experiments/overnight_state_preparation_20260913_0108/STARTUP_FILES.json
+*.textClipping
+
+# Generated manuscript data, figures, tables, and LaTeX build output
+/manuscript/state_preparation/data/*.csv
+/manuscript/state_preparation/data/*.json
+/manuscript/state_preparation/figures/
+/manuscript/state_preparation/tables/
+/manuscript/**/*.aux
+/manuscript/**/*.bbl
+/manuscript/**/*.blg
+/manuscript/**/*.out
+/manuscript/**/*.pdf
+/manuscript/**/*.fdb_latexmk
+/manuscript/**/*.fls
+/manuscript/**/mainNotes.bib

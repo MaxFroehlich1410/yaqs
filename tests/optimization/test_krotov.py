@@ -66,6 +66,8 @@ from mqt.yaqs.optimization import (
     train_krotov_state_preparation_batch,
     train_krotov_state_preparation_hybrid,
 )
+from mqt.yaqs.optimization import krotov as krotov_module
+from mqt.yaqs.optimization import parameterized_circuit as circuit_module
 from mqt.yaqs.optimization.krotov import (
     backward_costates,
     forward_states,
@@ -231,6 +233,7 @@ def test_forward_states_match_dense_statevector() -> None:
 
 @pytest.mark.parametrize(("loss", "use_bias", "label"), [("mse", True, -1.0), ("mse", False, 1.0), ("bce", False, 1.0)])
 def test_batch_direction_equals_finite_difference_gradient(
+    *,
     loss: Literal["mse", "bce"],
     use_bias: bool,
     label: float,
@@ -294,10 +297,6 @@ def test_backward_costates_match_dense_adjoint() -> None:
 
 def test_online_sweep_matches_dense_reference() -> None:
     """One online stale-adjoint sweep matches a dense re-implementation."""
-    from mqt.yaqs.optimization.krotov import (
-        _online_sample_update,
-    )
-
     circuit = build_test_circuit()
     readout = KrotovReadout(observable=Observable("z", 0), loss="mse")
     theta = rng.normal(size=circuit.num_params)
@@ -306,7 +305,7 @@ def test_online_sweep_matches_dense_reference() -> None:
     step_size = 0.17
     truncation = KrotovTruncation()
 
-    new_theta, _ = _online_sample_update(
+    new_theta, _ = krotov_module._online_sample_update(
         circuit, theta, x, y, readout, 0.0, step_size, MPS(circuit.num_qubits), truncation
     )
 
@@ -448,14 +447,12 @@ def test_parameterized_circuit_constructor_validation_branches() -> None:
 
 def test_validate_disentangler_unitary_rejects_invalid_matrices() -> None:
     """SMPD unitary validation should reject wrong shapes and non-unitary matrices."""
-    from mqt.yaqs.optimization.parameterized_circuit import (
-        _validate_disentangler_unitary,
-    )
-
     with pytest.raises(ValueError, match="Expected a \\(4, 4\\) SMPD unitary"):
-        _validate_disentangler_unitary(np.eye(2, dtype=np.complex128), num_sites=2)
+        circuit_module._validate_disentangler_unitary(np.eye(2, dtype=np.complex128), num_sites=2)
     with pytest.raises(ValueError, match="must be unitary"):
-        _validate_disentangler_unitary(np.array([[1.0, 1.0], [0.0, 1.0]], dtype=np.complex128), num_sites=1)
+        circuit_module._validate_disentangler_unitary(
+            np.array([[1.0, 1.0], [0.0, 1.0]], dtype=np.complex128), num_sites=1
+        )
 
 
 def test_from_qiskit_validation_branches() -> None:
@@ -955,31 +952,22 @@ def test_krotov_readout_and_tjm_option_validation_branches() -> None:
 
 def test_step_size_schedule_validation_branches() -> None:
     """Learning-rate schedule helper should handle decays and reject unknown modes."""
-    from mqt.yaqs.optimization.krotov import _step_size
-
-    assert _step_size(0.8, 3, "inverse", 0.5) == pytest.approx(0.4)
-    assert _step_size(0.8, 3, "exp", 0.5) == pytest.approx(0.8 * np.exp(-1.0))
+    assert krotov_module._step_size(0.8, 3, "inverse", 0.5) == pytest.approx(0.4)
+    assert krotov_module._step_size(0.8, 3, "exp", 0.5) == pytest.approx(0.8 * np.exp(-1.0))
     with pytest.raises(ValueError, match="Unknown learning-rate schedule"):
-        _step_size(0.8, 1, cast("Any", "linear"), 0.0)
+        krotov_module._step_size(0.8, 1, cast("Any", "linear"), 0.0)
 
 
 def test_krotov_state_validation_helpers(monkeypatch: pytest.MonkeyPatch) -> None:
     """State-resolution helpers should copy valid states and reject incompatible ones."""
-    from mqt.yaqs.optimization.krotov import (
-        _normalized_mps_copy,
-        _resolve_fixed_initial_state,
-        _resolve_initial_state,
-        _resolve_target_state,
-    )
-
     initial = MPS(1, state="ones")
-    resolved = _resolve_initial_state(initial, np.array([], dtype=np.float64), 1)
+    resolved = krotov_module._resolve_initial_state(initial, np.array([], dtype=np.float64), 1)
     assert resolved is not initial
     np.testing.assert_allclose(resolved.to_vec(), initial.to_vec())
 
     zero_state = MPS(length=1, tensors=[np.zeros((2, 1, 1), dtype=np.complex128)])
     with pytest.raises(ValueError, match="nonzero finite norm"):
-        _normalized_mps_copy(zero_state)
+        krotov_module._normalized_mps_copy(zero_state)
 
     imaginary_norm_state = MPS(1)
 
@@ -989,26 +977,21 @@ def test_krotov_state_validation_helpers(monkeypatch: pytest.MonkeyPatch) -> Non
 
     monkeypatch.setattr(imaginary_norm_state, "scalar_product", complex_scalar_product)
     with pytest.raises(ValueError, match="imaginary part"):
-        _normalized_mps_copy(imaginary_norm_state)
+        krotov_module._normalized_mps_copy(imaginary_norm_state)
 
     with pytest.raises(ValueError, match="Target state has 1 qubits"):
-        _resolve_target_state(MPS(1), num_qubits=2)
+        krotov_module._resolve_target_state(MPS(1), num_qubits=2)
     with pytest.raises(ValueError, match="Initial state has 1 qubits"):
-        _resolve_fixed_initial_state(MPS(1), num_qubits=2)
+        krotov_module._resolve_fixed_initial_state(MPS(1), num_qubits=2)
 
 
 def test_noise_sampling_validation_and_rare_branches(monkeypatch: pytest.MonkeyPatch) -> None:
     """Noisy-map sampling should handle trivial, no-jump, jump, and zero-weight paths."""
-    from mqt.yaqs.optimization.krotov import (
-        _jump_probability_weights,
-        _sample_noise_map_and_apply,
-    )
-
     truncation = KrotovTruncation()
     zero_noise = NoiseModel([{"name": "pauli_x", "sites": [0], "strength": 0.0}])
-    assert _jump_probability_weights(MPS(1), zero_noise, 1.0, truncation) == [0.0]
+    assert krotov_module._jump_probability_weights(MPS(1), zero_noise, 1.0, truncation) == [0.0]
 
-    empty_map = _sample_noise_map_and_apply(
+    empty_map = krotov_module._sample_noise_map_and_apply(
         MPS(1),
         None,
         truncation,
@@ -1019,7 +1002,7 @@ def test_noise_sampling_validation_and_rare_branches(monkeypatch: pytest.MonkeyP
     assert empty_map.jump_process_index is None
 
     pauli_noise = NoiseModel([{"name": "pauli_x", "sites": [0], "strength": 0.1}])
-    no_jump_map = _sample_noise_map_and_apply(
+    no_jump_map = krotov_module._sample_noise_map_and_apply(
         MPS(1),
         pauli_noise,
         truncation,
@@ -1030,7 +1013,7 @@ def test_noise_sampling_validation_and_rare_branches(monkeypatch: pytest.MonkeyP
     assert no_jump_map.jump_process_index is None
 
     jumping_noise = NoiseModel([{"name": "pauli_x", "sites": [0], "strength": 2.0}])
-    jump_map = _sample_noise_map_and_apply(
+    jump_map = krotov_module._sample_noise_map_and_apply(
         MPS(1),
         jumping_noise,
         truncation,
@@ -1045,7 +1028,7 @@ def test_noise_sampling_validation_and_rare_branches(monkeypatch: pytest.MonkeyP
     non_pauli_weak_noise = NoiseModel(
         [{"name": "projector", "sites": [0], "strength": 0.1, "matrix": projector}],
     )
-    non_pauli_no_jump_map = _sample_noise_map_and_apply(
+    non_pauli_no_jump_map = krotov_module._sample_noise_map_and_apply(
         MPS(1),
         non_pauli_weak_noise,
         truncation,
@@ -1059,7 +1042,7 @@ def test_noise_sampling_validation_and_rare_branches(monkeypatch: pytest.MonkeyP
     non_pauli_jumping_noise = NoiseModel(
         [{"name": "projector", "sites": [0], "strength": 2.0, "matrix": projector}],
     )
-    non_pauli_jump_map = _sample_noise_map_and_apply(
+    non_pauli_jump_map = krotov_module._sample_noise_map_and_apply(
         MPS(1),
         non_pauli_jumping_noise,
         truncation,
@@ -1074,7 +1057,7 @@ def test_noise_sampling_validation_and_rare_branches(monkeypatch: pytest.MonkeyP
         return [0.0]
 
     monkeypatch.setattr("mqt.yaqs.optimization.krotov._jump_probability_weights", zero_weights)
-    pauli_zero_weight_map = _sample_noise_map_and_apply(
+    pauli_zero_weight_map = krotov_module._sample_noise_map_and_apply(
         MPS(1),
         jumping_noise,
         truncation,
@@ -1084,7 +1067,7 @@ def test_noise_sampling_validation_and_rare_branches(monkeypatch: pytest.MonkeyP
     assert pauli_zero_weight_map.operators == ()
     assert pauli_zero_weight_map.jump_process_index is None
 
-    zero_weight_map = _sample_noise_map_and_apply(
+    zero_weight_map = krotov_module._sample_noise_map_and_apply(
         MPS(1),
         non_pauli_jumping_noise,
         truncation,
@@ -1098,10 +1081,6 @@ def test_noise_sampling_validation_and_rare_branches(monkeypatch: pytest.MonkeyP
 
 def test_tjm_fixed_noise_map_validation_branches() -> None:
     """Fixed noisy trajectory map lists should match gate and trajectory counts."""
-    from mqt.yaqs.optimization.krotov import (
-        _forward_tjm_trajectories,
-    )
-
     circuit = ParameterizedCircuit(1, [ParameterizedGate("rx", (0,), param_index=0)])
     theta = np.array([0.2])
     truncation = KrotovTruncation()
@@ -1120,7 +1099,7 @@ def test_tjm_fixed_noise_map_validation_branches() -> None:
             noise_maps=[],
         )
     with pytest.raises(ValueError, match="trajectory map lists"):
-        _forward_tjm_trajectories(
+        krotov_module._forward_tjm_trajectories(
             circuit,
             theta,
             np.array([], dtype=np.float64),
@@ -1134,24 +1113,18 @@ def test_tjm_fixed_noise_map_validation_branches() -> None:
 
 def test_cross_gate_contribution_empty_inputs_returns_zero() -> None:
     """The cross-trajectory gate signal is zero when either trajectory set is empty."""
-    from mqt.yaqs.optimization.krotov import (
-        _cross_gate_contribution,
-    )
-
     circuit = ParameterizedCircuit(1, [ParameterizedGate("ry", (0,), param_index=0)])
-    assert _cross_gate_contribution(circuit, circuit.gates[0], [], [], KrotovTruncation()) == pytest.approx(0.0)
+    assert krotov_module._cross_gate_contribution(
+        circuit, circuit.gates[0], [], [], KrotovTruncation()
+    ) == pytest.approx(0.0)
 
 
 def test_noisy_online_cross_update_branch_runs() -> None:
     """The cross-trajectory noisy online state-preparation branch should execute."""
-    from mqt.yaqs.optimization.krotov import (
-        _noisy_state_preparation_online_update,
-    )
-
     circuit = ParameterizedCircuit(1, [ParameterizedGate("ry", (0,), param_index=0)])
     theta = np.array([0.2])
     target = MPS(1)
-    new_theta, contribution = _noisy_state_preparation_online_update(
+    new_theta, contribution = krotov_module._noisy_state_preparation_online_update(
         circuit,
         theta,
         target,
@@ -1428,14 +1401,14 @@ def test_validation_errors() -> None:
 
 def test_noisy_state_preparation_crn_monotonic_descent() -> None:
     """A noisy state preparation batch with CRN produces a monotonically increasing fidelity trace."""
-    np.random.seed(42)
+    local_rng = np.random.default_rng(42)
     num_qubits = 2
-    statevec = np.random.randn(2**num_qubits) + 1j * np.random.randn(2**num_qubits)
+    statevec = local_rng.standard_normal(2**num_qubits) + 1j * local_rng.standard_normal(2**num_qubits)
     statevec /= np.linalg.norm(statevec)
     target_state = statevec
 
     circuit = create_brickwall_matrix_product_disentangler_parameterized_circuit(num_qubits, 1)
-    initial_theta = np.random.randn(circuit.num_params) * 0.1
+    initial_theta = local_rng.standard_normal(circuit.num_params) * 0.1
 
     processes = [{"name": "pauli_x", "sites": [i], "strength": 0.1} for i in range(num_qubits)]
     noise_model = NoiseModel(processes)

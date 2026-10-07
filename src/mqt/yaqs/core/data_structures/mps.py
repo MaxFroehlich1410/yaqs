@@ -1196,7 +1196,8 @@ class MPS:
         if rng is None:
             rng = np.random.default_rng()
 
-        for site, tensor in enumerate(temp_state.tensors):
+        for site in range(temp_state.length):
+            tensor = temp_state.tensors[site]
             # Rotate the tensor to the measurement basis
             # tensor shape is (p, l, r)
             rotated_tensor = oe.contract("ab, bcd->acd", rotation, tensor)
@@ -1212,7 +1213,7 @@ class MPS:
             if site != self.length - 1:
                 projected_tensor = oe.contract("a, acd->cd", selected_state, rotated_tensor)
 
-                temp_state.tensors[site + 1] = (  # ruff: ignore[loop-iterator-mutation]
+                temp_state.tensors[site + 1] = (
                     1
                     / np.sqrt(probabilities[chosen_index])
                     * oe.contract("ab, cbd->cad", projected_tensor, temp_state.tensors[site + 1])

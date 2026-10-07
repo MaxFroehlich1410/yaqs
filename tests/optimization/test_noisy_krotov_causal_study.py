@@ -10,10 +10,12 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from typing import TYPE_CHECKING, cast
 
 import pytest
 
+from benchmarks.state_preparation.calibration import CalibratedLocalDepolarizingProvider
 from experiments.noisy_krotov_causal_study import (
     ARMS,
     RESULT_NAME,
@@ -90,6 +92,21 @@ def test_configuration_rejects_noncanonical_target_and_invalid_batch() -> None:
         StudyConfig(qubits=8)
     with pytest.raises(ValueError, match="test_batch_size"):
         StudyConfig(test_trajectories=1, test_batch_size=2)
+    with pytest.raises(ValueError, match="only depolarizing_1s_all"):
+        StudyConfig(noise_id="dephasing_1s_all", noise_calibration="hardware_average_error")
+
+
+def test_calibration_is_explicit_and_legacy_configuration_is_preserved() -> None:
+    """Legacy manifest format survives while calibrated runs cannot reuse it."""
+    legacy = StudyConfig()
+    calibrated = replace(legacy, noise_calibration="hardware_average_error")
+    assert "noise_calibration" not in legacy.scientific_dict()
+    assert (
+        legacy.noise_provider().content_checksum
+        == "sha256:617b7e867df529de5cd559bddb9d22f3cdd1b12f4b5eae3f19e415f4e3b45254"
+    )
+    assert isinstance(calibrated.noise_provider(), CalibratedLocalDepolarizingProvider)
+    assert "noise_calibration_details" in calibrated.scientific_dict()
 
 
 def test_bounded_study_uses_shared_start_paired_maps_and_exact_resume(tmp_path: Path) -> None:
@@ -134,3 +151,30 @@ def test_bounded_study_uses_shared_start_paired_maps_and_exact_resume(tmp_path: 
     retained = (output / RESULT_NAME).read_bytes()
     assert run_study(output, config=config, resume=True) == result
     assert (output / RESULT_NAME).read_bytes() == retained
+
+
+def test_calibrated_parallel_study_matches_serial_and_rejects_legacy_resume(tmp_path: Path) -> None:
+    """Process parallelism preserves streams and all numerical replicate results."""
+    config = StudyConfig(
+        pretraining_iterations_per_depth=1,
+        finetune_updates=1,
+        refresh_interval=1,
+        validation_interval=1,
+        training_trajectories=1,
+        validation_trajectories=1,
+        test_trajectories=2,
+        test_batch_size=1,
+        replicates=2,
+        noise_calibration="hardware_average_error",
+    )
+    serial = run_study(tmp_path / "serial", config=config)
+    parallel = run_study(tmp_path / "parallel", config=config, workers="auto")
+    assert serial["configuration_checksum"] == parallel["configuration_checksum"]
+    assert serial["aggregate"] == parallel["aggregate"]
+    assert serial["seed_audit"] == parallel["seed_audit"]
+    assert cast("Mapping[str, object]", parallel["runtime"])["numerical_threads_per_worker"] == 1
+    assert run_study(tmp_path / "parallel", config=config, resume=True, workers=1) == parallel
+    with pytest.raises(ValueError, match="differs"):
+        run_study(tmp_path / "serial", config=replace(config, noise_calibration="legacy"), resume=True)
+    with pytest.raises(ValueError, match="workers"):
+        run_study(tmp_path / "invalid", config=config, workers=0)

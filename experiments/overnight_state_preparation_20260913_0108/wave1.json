@@ -1,0 +1,44 @@
+{
+  "name": "wave1",
+  "phase": "development",
+  "replicas": [11],
+  "targets": [
+    "gaussian_mu0p5_sigma0p1",
+    "tfim_critical",
+    "haar_random_1",
+    "random_mps_bond2"
+  ],
+  "methods": {
+    "unchanged": { "method": "unchanged", "iterations": 0 },
+    "exact_adam_005": { "method": "adam", "iterations": 150, "rate": 0.005 },
+    "exact_adam_020": { "method": "adam", "iterations": 150, "rate": 0.02 },
+    "noiseless_adam_020": {
+      "method": "noiseless_adam",
+      "iterations": 150,
+      "rate": 0.02
+    },
+    "lbfgs": {
+      "method": "lbfgs",
+      "iterations": 100,
+      "evaluations": 150,
+      "history": 10
+    },
+    "coordinate": {
+      "method": "coordinate",
+      "iterations": 20,
+      "checkpoint_every": 1
+    },
+    "homotopy_adam": { "method": "homotopy", "iterations": 150, "rate": 0.02 },
+    "weighted_adam": {
+      "method": "weighted_adam",
+      "iterations": 150,
+      "paths": 32,
+      "rate": 0.02
+    },
+    "adaptive_online": {
+      "method": "adaptive_online",
+      "iterations": 150,
+      "paths": 32
+    }
+  }
+}

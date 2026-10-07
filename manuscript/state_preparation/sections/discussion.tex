@@ -1,0 +1,92 @@
+\section{Discussion}
+\label{sec:discussion}
+
+We studied a top-down preparation workflow that separates ideal circuit
+construction, gate removal, and noisy refinement. Exact single-gate
+deletion scores identify the effect of each removal on the current ideal
+target fidelity. Frozen Pauli histories make the sampled refinement
+repeatable, and empirical weighting preserves the contributions of
+duplicate no-jump paths. Independent validation selects the circuit
+before exact evaluation of the same channel. These operations give a
+specified and auditable preparation procedure.
+
+The distinctions between its stages matter. Exact deletion damage for
+one gate does not bound the combined damage from simultaneous removals.
+Restoring the best noiseless parameters protects the returned ideal
+checkpoint, while the noisy phase retains its final iterate. Its
+cross-trajectory signal is not identified with the sampled-loss gradient.
+The noiseless adjoint interpretation and quasi-Newton safeguards therefore
+do not provide a convergence or monotonicity guarantee for the complete
+noisy workflow. The numerical results evaluate the implemented procedure
+with these limitations intact.
+
+Under logical-gate noise, the method combines the highest selected fidelity
+on five of nine targets with Pareto efficiency in fidelity and classical
+cost on seven. The six real targets give the strongest trade-offs against
+RobustState. Fontana remains an inexpensive alternative on that subset.
+Complex Haar targets require more top-down construction work, and
+RobustState dominates two of the three instances. The internal controls
+support the usefulness of the full workflow at the tested settings, but
+their differing policies prevent attributing the observed gains to a
+single component.
+
+Noise placement is a substantive part of this conclusion. Logical
+two-qubit primitives do not have equal physical decomposition costs.
+The native pilot gives a weaker top-down comparison on Gaussian and
+Haar 1, while retaining a classical-cost trade-off on critical Ising.
+The same-schedule parameter diagnostic also gives little benefit from
+switching the refinement to native noise at the selected endpoints.
+Thus the favorable logical results should be interpreted together with
+the native results rather than extrapolated to a common physical gate
+implementation.
+
+RobustState's refinement benefit also depends on the noise mechanism.
+Its authors attribute the hardware gains primarily to coherent-error
+correction and report only marginal fidelity improvement in their
+incoherent-noise simulator~\cite[Sec.~IV.C]{RobustState2024}.
+Our Pauli-noise benchmark excludes systematic coherent gate errors and
+therefore probes a related regime in which additional benefit from
+parameter refinement may be limited. This qualifies the expected
+refinement gain, rather than the achievable preparation fidelity:
+RobustState remains competitive on our complex Haar targets.
+The present comparison does not assess its reported advantage in
+correcting coherent hardware errors.
+
+Separate twelve-qubit diagnostics indicate a substantial cost for noisy
+IQSP in our benchmark implementation. An early depth-four Gaussian
+checkpoint required $505\,\mathrm{s}$ for one full fidelity-gradient
+evaluation with our default compression on one Apple M1 Pro thread; peak
+physical footprint was $4.76\,\mathrm{GiB}$.
+% Provenance and compression settings: data/q12_iqsp_resource_diagnostic.json.
+The published H2 demonstration uses noiseless one-qubit gates and
+angle-dependent, factorized single-qubit depolarization after native $ZZ$
+rotations~\cite{Ballarin2025}. Our benchmark additionally includes joint
+two-qubit Pauli errors, requiring joint noise contractions and compression
+in the locally purified implementation. Our trajectory refinement instead
+propagates sampled pure states without purification indices, at the cost
+of sampling error. This suggests a potential computational advantage for
+parameter-independent Pauli noise. These checkpoint diagnostics neither
+isolate noise structure as the cause of the observed cost nor establish
+superior end-to-end performance or scaling. IQSP itself is not restricted
+to the noise model or circuits used in its demonstration.
+
+The main comparison is limited to a development-used fixture, six qubits, one
+optimizer seed, one synthetic Pauli profile in the all-target comparison,
+and finite, unequal search budgets. The exact-density feedback supplied
+to several comparators is a simulator adaptation. It does not measure
+their hardware sampling costs or their response to coherent device
+errors. The dense implementation also does not establish the scaling of
+a tensor-network realization. In particular, the retained-history cross
+update contains contractions over pairs of trajectories; duplicate
+compression alone does not imply linear scaling with the raw sample
+count.
+
+Further evaluation should vary optimizer seeds and use new target
+instances, extend the matched native study, and test budget sensitivity.
+Matched component ablations would be needed to separate the roles of
+pruning, construction refinement, and the noisy update. Mathematical
+analysis of the cross-trajectory signal is a separate question from
+implementation correctness. Within the measured setting, top-down
+pruning and refinement provide a useful preparation option whose value
+depends on the target, circuit representation, and available classical
+computation.

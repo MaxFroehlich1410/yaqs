@@ -1,0 +1,100 @@
+\section{Preparation by construction, pruning, and noisy refinement}
+\label{sec:method}
+
+We first construct a circuit without noise, remove gates whose individual deletion has little effect on the target fidelity, and refine the remaining parameters under the prescribed channel. Circuit depth determines both the available parameter space and the number of noise windows. We therefore apply this procedure at successive depths and select a candidate using independent noisy validation. Figure~\ref{fig:workflow} summarizes the complete procedure used for the reported baseline.
+
+\begin{figure*}[t]
+    \centering
+    \includegraphics[width=\textwidth]{figures/workflow.pdf}
+    \caption{\textbf{Construction and assessment of the preparation circuit.} At each visited depth, noiseless optimization returns its best parameter vector. This unpruned circuit supplies the parameters for further growth; a separate copy is pruned and refined with frozen noise histories. Noisy refinement returns its final iterate. Independent validation controls depth selection and stopping, after which exact density-matrix propagation assesses the locked circuit. All visited depths contribute to construction and training cost, including discarded candidates.}
+    \label{fig:workflow}
+\end{figure*}
+
+\subsection{Noiseless circuit construction}
+\label{sec:construction}
+
+The ansatz acts on a line of qubits. An initial product of single-qubit Euler rotations is followed by nearest-neighbor blocks arranged in alternating bond layers. We use the state-preparation adjoint of the nine-parameter brickwall matrix-product-disentangler block implemented in YAQS. Writing
+\begin{equation}
+    U(\vartheta,\varphi,\lambda)
+    =R_z(\varphi)R_y(\vartheta)R_z(\lambda),
+\end{equation}
+one block has the form
+\begin{equation}
+    V=(U_a^\dagger\otimes U_b^\dagger)
+    R_{ZZ}(-\gamma_z)R_{YY}(-\gamma_y)R_{XX}(-\gamma_x).
+    \label{eq:preparation_block}
+\end{equation}
+The two Euler rotations and three entangling angles are independent. The implementation emits the blocks in reverse disentangling-layer order. The depth index $d$ counts complete even/odd bond cycles, giving $2d$ bond layers and $d(n-1)$ blocks. Before pruning, the circuit contains $3n+9d(n-1)$ scalar parameters. Each primitive rotation has its own parameter and noise window; an entire block is not treated as a single noisy operation.
+
+We increase $d$ one cycle at a time and retain the previously trained coordinates. New coordinates are sampled from a centered normal distribution with standard deviation $0.05$ at the first depth and $0.001$ thereafter. All depths receive the same construction budget: 100 online adjoint sweeps followed by 100 L-BFGS updates. There is no ideal-fidelity stopping threshold within this search.
+
+The online phase uses the gate-local discrete adjoint construction of the hybrid Krotov optimizer~\cite{Froehlich2026HybridKrotov}, motivated by the forward/backward structure of quantum optimal control~\cite{Goerz2019}. Let
+\begin{equation}
+    A_i=(\partial_{\theta_i}G_i)G_i^\dagger,
+\end{equation}
+and let $\ket{\psi_i}$ denote the state immediately after gate $i$. For the ideal infidelity $\mathcal L_0=1-F_0$, the terminal costate is
+\begin{equation}
+    \ket{b_L}=-\langle t|\psi_L^{\mathrm{old}}\rangle\ket{t}.
+\end{equation}
+We propagate this costate backward through the old circuit and evaluate
+\begin{equation}
+    s_i^{(0)}=2\operatorname{Re}\langle b_i|A_i|\psi_i\rangle,
+    \qquad
+    \theta_i\leftarrow\theta_i-0.7s_i^{(0)}.
+    \label{eq:ideal_signal}
+\end{equation}
+During an online sweep, backward states remain fixed while gates are updated in circuit order and each updated forward prefix is propagated onward. When all states instead use the same parameter vector, Eq.~\eqref{eq:ideal_signal} gives the exact noiseless loss gradient, as in reverse-mode circuit differentiation~\cite{JonesGacon2020}. The distinction is the parameter vector at which the forward and backward states are evaluated.
+
+The batch phase applies L-BFGS~\cite{LiuNocedal1989} to this true gradient,
+\begin{equation}
+    p_k=-H_k\nabla\mathcal L_0(\theta_k),\qquad
+    \theta_{k+1}=\theta_k+\alpha_kp_k,
+    \label{eq:lbfgs_direction}
+\end{equation}
+with a bounded Armijo search and positive-curvature safeguards specified in Appendix~\ref{app:lbfgs}. After every complete sweep or batch update, we compare the ideal fidelity with the best observed value, including the initialization. At the end of construction, we restore the corresponding parameter vector; ties keep the earlier vector. This checkpoint rule protects the returned noiseless state from a worse final iterate. It does not require every online sweep to improve fidelity.
+
+\subsection{Exact gate-removal scores}
+\label{sec:pruning}
+
+We next score the removal of each complete elementary gate from the restored noiseless circuit. The signed fidelity damage is
+\begin{equation}
+    \Delta_i=F_0(C)-F_0(C\setminus G_i).
+    \label{eq:deletion}
+\end{equation}
+Our pruning rule, denoted B in the experiment archive, simultaneously removes all gates satisfying $\Delta_i<\varepsilon$, with $\varepsilon=0.01$. Surviving parameters retain their trained values. A negative score means that the individual deletion improves ideal fidelity. The score is computed from the target overlap, without a noisy objective or a derivative approximation.
+
+A shared forward/backward calculation evaluates every individual removal in $O(L2^n)$ work and storage for dense states; Appendix~\ref{app:deletion} gives the contraction. These individual scores do not bound the damage from simultaneous deletions. We neither sum them into a fidelity guarantee nor repair the circuit between removals. Each deleted gate also loses its noise window. The resulting balance between ideal approximation error and noise exposure is assessed after refinement and validation.
+
+\subsection{Frozen trajectories and noisy refinement}
+\label{sec:refinement}
+
+For each pruned circuit we sample $M=100$ complete histories from the gate-local law and keep them fixed throughout refinement. The histories are parameter independent because the Pauli probabilities depend on gate support rather than rotation angle. Reusing them provides common random numbers across parameter updates.
+
+If $m_0$ sampled histories contain no jumps, we merge them into one representative with weight $m_0/M$. Every history containing a jump retains weight $1/M$, including histories whose jumps may cancel. With $K=M-m_0+\mathbf 1_{m_0>0}$ retained histories, the sampled fidelity is
+\begin{equation}
+    \widehat F(\theta)=\sum_{r=1}^{K}w_r
+    |\langle t|\psi_r(\theta)\rangle|^2.
+    \label{eq:weighted_fidelity}
+\end{equation}
+States are recomputed after parameter changes. This compression preserves the original empirical weights and both implemented update modes exactly, as shown in Appendix~\ref{app:compression}. A nonempty circuit whose complete bank contains no jumps is recorded as a coverage failure; the bank is neither replaced nor conditioned on observing a jump.
+
+Let $\ket{\psi_{s,i}}$ be the forward state of history $s$ immediately after gate $i$, before its noise. Let $\ket{\chi_{r,i}}$ be the unscaled target propagated backward through the suffix of history $r$, including the adjoint of the noise following gate $i$, to that same point. The implemented noisy signal is
+\begin{equation}
+\begin{split}
+    s_i^{(\times)}={}&-2\operatorname{Re}
+    \sum_{r,s=1}^{K}w_rw_s
+    \langle\chi_{r,i}|A_i|\psi_{s,i}\rangle\,
+    \langle\psi_{s,i}|\chi_{r,i}\rangle.
+\end{split}
+    \label{eq:cross_signal}
+\end{equation}
+Both trajectory indices carry empirical weights. We use this cross-trajectory signal as an update rule; we do not identify it with the gradient of $1-\widehat F$. Consequently, the noiseless exact-gradient result does not supply a convergence or monotonicity guarantee for this phase.
+
+Refinement performs 100 online sweeps followed by 100 simultaneous updates, each with $\theta_i\leftarrow\theta_i-0.2s_i^{(\times)}$. Online sweeps reuse old backward states while refreshing forward prefixes, as in construction. Simultaneous updates evaluate every signal at the same iterate. There is no learning-rate decay, L-BFGS step, or best-iterate restoration in this phase: the historical refinement procedure returns its final parameters.
+
+\subsection{Depth selection and final assessment}
+\label{sec:depth_selection}
+
+Every visited depth produces a pruned, refined candidate, while the next construction starts from the unpruned noiseless checkpoint. Independent validation under the same channel determines whether to continue growing. A material improvement must exceed $0.001$ plus twice the combined standard error of the current candidate and the last material record. We stop after three unsuccessful extensions or at $d=16$; the precise rule is given in Appendix~\ref{app:selection}.
+
+The returned circuit is the candidate with greatest validation fidelity over all valid visited depths, with earlier depth preferred on a tie. This winner can differ from the last material record. The archived baseline used 32,768 validation histories per candidate, and its selection remains fixed in the present comparison. The later 8,192-history comparison validation is diagnostic for this endpoint. Exact density-matrix evaluation is performed only after selection is locked and never replaces the selected circuit. Thus the reported fidelity integrates all modeled noise outcomes, while the depth decision retains its original sampled-validation provenance.

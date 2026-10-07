@@ -37,6 +37,7 @@ import sys
 import tempfile
 import time
 from dataclasses import asdict, dataclass
+from functools import partial
 from importlib.metadata import version
 from pathlib import Path
 from statistics import fmean, stdev
@@ -45,6 +46,8 @@ from typing import TYPE_CHECKING, Literal, cast
 import numpy as np
 from scipy.stats import t as student_t
 
+from benchmarks.state_preparation.calibration import CalibratedLocalDepolarizingProvider
+from benchmarks.state_preparation.execution import WorkerSetting, completed_jobs, parse_workers, resolve_workers
 from benchmarks.state_preparation.noise import StandardNoiseProvider
 from benchmarks.state_preparation.targets import load_target, load_target_collection
 from mqt.yaqs.core.data_structures.mps import MPS
@@ -196,6 +199,7 @@ class StudyConfig:
     replicates: int = 3
     base_seed: int = 20260904
     noise_id: str = "depolarizing_1s_all"
+    noise_calibration: Literal["legacy", "hardware_average_error"] = "legacy"
 
     def __post_init__(self) -> None:
         """Reject configurations outside the intended exact q6 study."""
@@ -247,11 +251,28 @@ class StudyConfig:
             msg = "Fine-tuning learning rate must be positive and its decay nonnegative."
             raise ValueError(msg)
         StandardNoiseProvider(self.noise_id)
+        if self.noise_calibration not in {"legacy", "hardware_average_error"}:
+            msg = "Unknown noise calibration."
+            raise ValueError(msg)
+        if self.noise_calibration != "legacy" and self.noise_id != "depolarizing_1s_all":
+            msg = "Hardware calibration currently supports only depolarizing_1s_all."
+            raise ValueError(msg)
+
+    def noise_provider(self) -> StandardNoiseProvider | CalibratedLocalDepolarizingProvider:
+        """Resolve legacy or separately identified hardware-calibrated noise."""
+        if self.noise_calibration == "hardware_average_error":
+            return CalibratedLocalDepolarizingProvider()
+        return StandardNoiseProvider(self.noise_id)
 
     def scientific_dict(self) -> dict[str, object]:
         """Return a JSON-native description of all scientific settings."""
         value = asdict(self)
         value["depths"] = list(self.depths)
+        if self.noise_calibration == "legacy":
+            # Preserve all existing legacy configuration checksums and seeds.
+            value.pop("noise_calibration")
+        else:
+            value["noise_calibration_details"] = CalibratedLocalDepolarizingProvider().scientific_dict()
         return {"schema_version": SCHEMA_VERSION, **value}
 
 
@@ -466,7 +487,7 @@ def _load_or_sample_ensemble(
     *,
     circuit: ParameterizedCircuit,
     theta: NDArray[np.float64],
-    provider: StandardNoiseProvider,
+    provider: StandardNoiseProvider | CalibratedLocalDepolarizingProvider,
     options: KrotovTJMOptions,
     truncation: KrotovTruncation,
     role: Literal["training_trajectory", "checkpoint_validation", "pilot_evaluation"],
@@ -516,7 +537,7 @@ def _validation_ensemble(
         replicate_root / "validation_ensemble.json",
         circuit=circuit,
         theta=shared_theta,
-        provider=StandardNoiseProvider(config.noise_id),
+        provider=config.noise_provider(),
         options=_trajectory_options(config.validation_trajectories, cross=False),
         truncation=_truncation(),
         role="checkpoint_validation",
@@ -547,7 +568,7 @@ def _validation_fidelity(
         _trajectory_options(config.validation_trajectories, cross=False),
         truncation=_truncation(),
         fixed_noise_maps=ensemble.replay_maps(),
-        noise_provider=StandardNoiseProvider(config.noise_id),
+        noise_provider=config.noise_provider(),
     )[1]
 
 
@@ -629,7 +650,7 @@ def _training_ensemble(
         _ensemble_path(arm_root / "training_ensembles", point.ensemble_index),
         circuit=circuit,
         theta=theta,
-        provider=StandardNoiseProvider(config.noise_id),
+        provider=config.noise_provider(),
         options=_trajectory_options(config.training_trajectories, cross=True),
         truncation=_truncation(),
         role="training_trajectory",
@@ -662,7 +683,7 @@ def train_arm(
     selected_path = arm_root / "selected_checkpoint.npz"
     circuit = create_circuit(config.qubits, config.depths[-1])
     truncation = _truncation()
-    provider = StandardNoiseProvider(config.noise_id)
+    provider = config.noise_provider()
     initial_validation = _validation_fidelity(circuit, shared_theta, target, config, validation_ensemble)
     theta: NDArray[np.float64]
     selected_theta: NDArray[np.float64]
@@ -845,7 +866,7 @@ def evaluate_replicate(
     circuit = create_circuit(config.qubits, config.depths[-1])
     circuit_checksum = _circuit_checksum(circuit)
     truncation = _truncation()
-    provider = StandardNoiseProvider(config.noise_id)
+    provider = config.noise_provider()
     selected = {arm: _selected_theta(replicate_root, arm) for arm in ARMS}
     rows: list[dict[str, object]] = []
     batch_count = math.ceil(config.test_trajectories / config.test_batch_size)
@@ -1031,19 +1052,62 @@ def _aggregate(replicates: Sequence[Mapping[str, object]]) -> dict[str, object]:
     }
 
 
+def _run_replicate(
+    replicate_index: int,
+    root: Path,
+    shared_theta: NDArray[np.float64],
+    target: NDArray[np.complex128],
+    config: StudyConfig,
+    configuration_checksum: str,
+) -> tuple[dict[str, object], dict[str, object]]:
+    """Execute one independent replicate in its own artifact directory."""
+    replicate_root = root / f"replicate_{replicate_index:03d}"
+    circuit = create_circuit(config.qubits, config.depths[-1])
+    validation = _validation_ensemble(replicate_root, circuit, shared_theta, config, configuration_checksum)
+    arms = [
+        train_arm(
+            replicate_root,
+            cast("Arm", arm),
+            shared_theta,
+            target,
+            config,
+            configuration_checksum,
+            replicate_index,
+            validation,
+        )
+        for arm in ARMS
+    ]
+    initial_checksums = {cast("str", arm["initial_theta_checksum"]) for arm in arms}
+    if initial_checksums != {_array_checksum(shared_theta)}:
+        msg = f"Replicate {replicate_index} arms did not share the pretrained checkpoint."
+        raise CausalStudyError(msg)
+    training: dict[str, object] = {
+        "replicate": replicate_index,
+        "validation_ensemble_checksum": validation.content_checksum,
+        "arms": arms,
+    }
+    evaluation = evaluate_replicate(
+        replicate_root, shared_theta, target, config, configuration_checksum, replicate_index
+    )
+    _atomic_json(replicate_root / "replicate_result.json", _seal(evaluation))
+    return training, evaluation
+
+
 def run_study(
     output_root: Path,
     *,
     config: StudyConfig | None = None,
     resume: bool = False,
+    workers: WorkerSetting = 1,
 ) -> dict[str, object]:
     """Run or exactly resume the canonical five-arm causal study."""
     config = StudyConfig() if config is None else config
+    effective_workers = resolve_workers(workers, config.replicates)
     target_collection = load_target_collection()
     target_record = load_target(config.qubits, config.target_id)
     target = target_record.state_vector_copy()
     circuit = create_circuit(config.qubits, config.depths[-1])
-    provider = StandardNoiseProvider(config.noise_id)
+    provider = config.noise_provider()
     config_document = _seal({
         **config.scientific_dict(),
         "target_fixture_checksum": target_collection.checksum,
@@ -1064,47 +1128,21 @@ def run_study(
     replicate_results: list[dict[str, object]] = []
     training_results: list[dict[str, object]] = []
     configuration_checksum = cast("str", config_document["content_checksum"])
-    for replicate_index in range(config.replicates):
-        replicate_root = root / f"replicate_{replicate_index:03d}"
-        validation = _validation_ensemble(
-            replicate_root,
-            circuit,
-            shared_theta,
-            config,
-            configuration_checksum,
-        )
-        arms = [
-            train_arm(
-                replicate_root,
-                cast("Arm", arm),
-                shared_theta,
-                target,
-                config,
-                configuration_checksum,
-                replicate_index,
-                validation,
-            )
-            for arm in ARMS
-        ]
-        initial_checksums = {cast("str", arm["initial_theta_checksum"]) for arm in arms}
-        if initial_checksums != {_array_checksum(shared_theta)}:
-            msg = f"Replicate {replicate_index} arms did not share the pretrained checkpoint."
-            raise CausalStudyError(msg)
-        training_results.append({
-            "replicate": replicate_index,
-            "validation_ensemble_checksum": validation.content_checksum,
-            "arms": arms,
-        })
-        evaluation = evaluate_replicate(
-            replicate_root,
-            shared_theta,
-            target,
-            config,
-            configuration_checksum,
-            replicate_index,
-        )
+    execute_replicate = partial(
+        _run_replicate,
+        root=root,
+        shared_theta=shared_theta,
+        target=target,
+        config=config,
+        configuration_checksum=configuration_checksum,
+    )
+    completed_replicates = [
+        result
+        for _index, result in sorted(completed_jobs(execute_replicate, list(range(config.replicates)), workers=workers))
+    ]
+    for training, evaluation in completed_replicates:
+        training_results.append(training)
         replicate_results.append(evaluation)
-        _atomic_json(replicate_root / "replicate_result.json", _seal(evaluation))
 
     seed_audit = verify_seed_separation(root)
     result = _seal({
@@ -1116,6 +1154,8 @@ def run_study(
             "python": platform.python_version(),
             "numpy": version("numpy"),
             "scipy": version("scipy"),
+            "workers": effective_workers,
+            "numerical_threads_per_worker": 1,
         },
         "design": {
             "arms": list(ARMS),
@@ -1147,6 +1187,8 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-root", type=Path, required=True)
     parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--noise-calibration", choices=("legacy", "hardware_average_error"), default="legacy")
+    parser.add_argument("--workers", type=parse_workers, default="auto")
     parser.add_argument(
         "--pretraining-iterations-per-depth",
         type=int,
@@ -1171,6 +1213,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         result = run_study(
             arguments.output_root,
             config=StudyConfig(
+                noise_calibration=arguments.noise_calibration,
                 pretraining_iterations_per_depth=arguments.pretraining_iterations_per_depth,
                 finetune_updates=arguments.finetune_updates,
                 training_trajectories=arguments.training_trajectories,
@@ -1183,6 +1226,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 base_seed=arguments.base_seed,
             ),
             resume=arguments.resume,
+            workers=arguments.workers,
         )
     except Exception as error:
         print(f"Experiment failed: {error}", file=sys.stderr)

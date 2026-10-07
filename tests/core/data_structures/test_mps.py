@@ -7,8 +7,6 @@
 
 """Tests for :class:`mqt.yaqs.core.data_structures.mps.MPS`."""
 
-# ruff: file-ignore[non-lowercase-variable-in-function]
-
 from __future__ import annotations
 
 import copy
@@ -59,7 +57,7 @@ def _permuted_periodic_wrap_gate(gate4: np.ndarray) -> np.ndarray:
             idx_bond = 2 * b + a
             p_perm[idx_bond, idx_merged] = 1.0
     g = np.asarray(gate4, dtype=np.complex128)
-    return p_perm.conj().T @ g @ p_perm
+    return p_perm.conj().test_tensor @ g @ p_perm
 
 
 def _dense_embed_adjacent_two_site(length: int, site_left: int, gate4: np.ndarray) -> np.ndarray:
@@ -102,7 +100,7 @@ def _dense_embed_periodic_wrap_two_site(length: int, gate4: np.ndarray) -> np.nd
         u_fwd = _dense_embed_adjacent_two_site(length, i, sw) @ u_fwd
     g_merged = _permuted_periodic_wrap_gate(g)
     g_nn = _dense_embed_adjacent_two_site(length, length - 2, g_merged)
-    return np.asarray(u_fwd.conj().T @ g_nn @ u_fwd, dtype=np.complex128)
+    return np.asarray(u_fwd.conj().test_tensor @ g_nn @ u_fwd, dtype=np.complex128)
 
 
 def _dense_embed_two_site_little_endian(length: int, site_left: int, site_right: int, gate4: np.ndarray) -> np.ndarray:
@@ -472,7 +470,7 @@ def test_mps_apply_local_l2_periodic_wrap_matches_permuted_nn() -> None:
     length = 2
     rng = np.random.default_rng(2026)
     g_random = (rng.standard_normal((4, 4)) + 1j * rng.standard_normal((4, 4))).astype(np.complex128)
-    gate4 = (g_random + g_random.conj().T) / 2
+    gate4 = (g_random + g_random.conj().test_tensor) / 2
     g_merged = _permuted_periodic_wrap_gate(gate4)
 
     mps_wrap = MPS(length, state="random", pad=8)
@@ -559,7 +557,7 @@ def test_mps_mixed_expectation_l2_periodic_wrap_matches_permuted_nn() -> None:
     length = 2
     rng = np.random.default_rng(2026)
     g_random = (rng.standard_normal((4, 4)) + 1j * rng.standard_normal((4, 4))).astype(np.complex128)
-    gate4 = (g_random + g_random.conj().T) / 2
+    gate4 = (g_random + g_random.conj().test_tensor) / 2
     g_merged = _permuted_periodic_wrap_gate(gate4)
 
     mps_wrap = MPS(length, state="random", pad=8)
@@ -836,7 +834,7 @@ def test_convert_to_vector() -> None:
     product of the corresponding local state vectors.
     """
     test_states = ["zeros", "ones", "x+", "x-", "y+", "y-"]
-    Length = 4  # Use a small number of sites for testing.
+    test_length = 4  # Use a small number of sites for testing.
     tol = 1e-12
 
     for state_str in test_states:
@@ -854,11 +852,11 @@ def test_convert_to_vector() -> None:
             local_state = np.array([1 / np.sqrt(2), -1j / np.sqrt(2)], dtype=complex)
 
         # Create an MPS for the given state.
-        mps = MPS(length=Length, state=state_str)
+        mps = MPS(length=test_length, state=state_str)
         psi = mps.to_vec()
 
         # Construct the expected state vector as the Kronecker product of local states.
-        local_states = [local_state for _ in range(Length)]
+        local_states = [local_state for _ in range(test_length)]
 
         expected = np.array(1, dtype=complex)
         for state in local_states:
@@ -1002,8 +1000,8 @@ def test_pad_shapes_and_centre(length: int, target: int) -> None:
     assert mps.check_canonical_form()[0] == 0
 
     # expected staircase
-    for i, T in enumerate(mps.tensors):
-        _, chi_l, chi_r = T.shape
+    for i, test_tensor in enumerate(mps.tensors):
+        _, chi_l, chi_r = test_tensor.shape
 
         # left (bond i - 1)
         if i == 0:
@@ -1051,7 +1049,7 @@ def test_haar_random_shapes_and_isometries() -> None:
 
         q_mat = tensor.reshape(d * chi_l, chi_r)
         ident = np.eye(chi_r, dtype=np.complex128)
-        np.testing.assert_allclose(q_mat.conj().T @ q_mat, ident, atol=1e-12)
+        np.testing.assert_allclose(q_mat.conj().test_tensor @ q_mat, ident, atol=1e-12)
 
     assert np.isclose(mps.norm(), 1.0, atol=1e-12)
 
@@ -1129,19 +1127,19 @@ def test_truncate_preserves_orthogonality_center_and_canonicity(center: int) -> 
     assert np.isclose(overlap, 1.0, atol=1e-12)
 
     # also check left/right canonicity around that center
-    L = mps.length
+    test_length = mps.length
     for i in range(before_center):
         # left-canonical test
-        A = mps.tensors[i]
-        conjA = np.conj(A)
-        gram = oe.contract("ijk, ijl->kl", conjA, A)
+        tensor_a = mps.tensors[i]
+        conjugate_a = np.conj(tensor_a)
+        gram = oe.contract("ijk, ijl->kl", conjugate_a, tensor_a)
         # identity on the i-th right bond
         assert np.allclose(gram, np.eye(gram.shape[0]), atol=1e-12)
-    for i in range(before_center + 1, L):
+    for i in range(before_center + 1, test_length):
         # right-canonical test
-        A = mps.tensors[i]
-        conjA = np.conj(A)
-        gram = oe.contract("ijk, ilk->jl", A, conjA)
+        tensor_a = mps.tensors[i]
+        conjugate_a = np.conj(tensor_a)
+        gram = oe.contract("ijk, ilk->jl", tensor_a, conjugate_a)
         assert np.allclose(gram, np.eye(gram.shape[0]), atol=1e-12)
 
 
@@ -1162,8 +1160,8 @@ def test_truncate_reduces_bond_dimensions_and_truncates() -> None:
     mps.check_if_valid_mps()
     for _tensor in mps.tensors:
         pass
-    for T in mps.tensors:
-        _, bond_left, bond_right = T.shape
+    for test_tensor in mps.tensors:
+        _, bond_left, bond_right = test_tensor.shape
         assert bond_left <= 3
         assert bond_right <= 3
 
@@ -1190,18 +1188,18 @@ def _bell_pair_mps() -> MPS:
     Returns:
         MPS: The product-state MPS.
     """
-    A = np.zeros((2, 1, 2), dtype=complex)
-    B = np.zeros((2, 2, 1), dtype=complex)
+    tensor_a = np.zeros((2, 1, 2), dtype=complex)
+    tensor_b = np.zeros((2, 2, 1), dtype=complex)
 
     # A encodes 1/√2 on |0> with bond 0, and 1/√2 on |1> with bond 1
-    A[0, 0, 0] = 1 / np.sqrt(2)
-    A[1, 0, 1] = 1 / np.sqrt(2)
+    tensor_a[0, 0, 0] = 1 / np.sqrt(2)
+    tensor_a[1, 0, 1] = 1 / np.sqrt(2)
 
     # B routes bond 0 -> |0>, bond 1 -> |1>
-    B[0, 0, 0] = 1.0
-    B[1, 1, 0] = 1.0
+    tensor_b[0, 0, 0] = 1.0
+    tensor_b[1, 1, 0] = 1.0
 
-    return MPS(length=2, tensors=[A, B], physical_dimensions=[2, 2])
+    return MPS(length=2, tensors=[tensor_a, tensor_b], physical_dimensions=[2, 2])
 
 
 def _product_state_mps(length: int) -> MPS:
@@ -1213,9 +1211,9 @@ def _product_state_mps(length: int) -> MPS:
     pdim = 2
     tensors = []
     for _ in range(length):
-        T = np.zeros((pdim, 1, 1), dtype=complex)
-        T[0, 0, 0] = 1.0  # |0>
-        tensors.append(T)
+        test_tensor = np.zeros((pdim, 1, 1), dtype=complex)
+        test_tensor[0, 0, 0] = 1.0  # |0>
+        tensors.append(test_tensor)
     return MPS(length=length, tensors=tensors, physical_dimensions=[pdim] * length)
 
 

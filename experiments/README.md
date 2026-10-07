@@ -1,5 +1,21 @@
 # Noisy state-preparation experiments
 
+## Published research source
+
+This branch includes the top-down state-preparation experiments, legacy
+pruning and refinement studies, trajectory and sampling experiments, the
+[competitor comparison package](state_preparation_competitors/README.md), and
+the [overnight experiment package](overnight_state_preparation_20260913_0108/HANDOFF.md).
+Protocols and written findings accompany the scripts. See
+[top-down method documentation](topdown_state_preparation_method.md) for the
+current algorithm and [benchmark documentation](../benchmarks/state_preparation_benchmarks.md)
+for the target and evaluation conventions.
+
+Generated output, parameter checkpoints, numerical result files, plots, and
+manuscript build artifacts stay local. Archive-driven replay and analysis
+need the corresponding local inputs; a GitHub clone contains the source,
+protocol configurations, and small automated-test reference fixtures.
+
 ## Canonical q6 causal study
 
 `noisy_krotov_causal_study.py` tests whether noisy fine-tuning improves fresh

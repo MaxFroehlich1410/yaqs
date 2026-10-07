@@ -1,0 +1,2 @@
+# Optional official OrthoMADS backend. Install in an isolated environment.
+PyNomadBBO==4.6.0

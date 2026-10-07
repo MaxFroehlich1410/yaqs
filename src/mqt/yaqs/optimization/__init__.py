@@ -9,11 +9,13 @@
 
 This package contains the Krotov-inspired discrete adjoint optimizer for
 parameterized quantum circuits on the MPS/MPO backend, together with the
-gate-list circuit representation it operates on.
+gate-list circuit representation it operates on and a small-system statevector
+backend for state preparation with unitary noise trajectories.
 """
 
 from __future__ import annotations
 
+from .backends import PreparationBackend, create_backend
 from .gate_noise import (
     CompositeGateNoiseInstruction,
     GateNoiseContext,
@@ -73,6 +75,7 @@ from .krotov_ensembles import (
     derive_legacy_krotov_trajectory_seed,
     sample_krotov_fixed_map_ensemble,
 )
+from .mps_backend import MPSBackend
 from .parameterized_circuit import (
     ParameterizedCircuit,
     ParameterizedGate,
@@ -80,6 +83,8 @@ from .parameterized_circuit import (
     create_brickwall_matrix_product_disentangler_parameterized_circuit,
     create_sequential_matrix_product_disentangler_parameterized_circuit,
 )
+from .statevector import StatevectorBackend
+from .trajectories import TrajectorySampler
 
 __all__ = [
     "KROTOV_FIXED_MAP_ENSEMBLE_IDENTITY_VERSION",
@@ -106,12 +111,17 @@ __all__ = [
     "KrotovTrajectory",
     "KrotovTruncation",
     "LocalOperator",
+    "MPSBackend",
     "NoisyStatePreparationMetrics",
     "ParameterizedCircuit",
     "ParameterizedGate",
+    "PreparationBackend",
     "RandomUnitaryInstruction",
+    "StatevectorBackend",
     "TJMNoiseInstruction",
+    "TrajectorySampler",
     "brickwall_matrix_product_disentangler_num_parameters",
+    "create_backend",
     "create_brickwall_matrix_product_disentangler_parameterized_circuit",
     "create_sequential_matrix_product_disentangler_parameterized_circuit",
     "derive_krotov_trajectory_seed",

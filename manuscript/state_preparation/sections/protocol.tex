@@ -1,0 +1,119 @@
+\section{Numerical protocol}
+\label{sec:protocol}
+
+The numerical study asks whether the complete construction and refinement
+workflow provides a useful combination of noisy fidelity, classical cost,
+and circuit resources. We compare the frozen top-down method with three
+publication-based procedures and two internal controls. Candidate grids and
+optimizer budgets are fixed for each procedure, but are not equal across
+procedures. The comparison therefore measures the implementations at their
+declared budgets.
+
+\subsection{Targets and comparison methods}
+
+The target set contains nine six-qubit states. One encodes the square root
+of a Gaussian probability density with mean $0.5$ and standard deviation
+$0.1$ on an endpoint-excluded quantics grid. Three are ground states of the
+open transverse-field Ising chain
+\begin{equation}
+ H=-\sum_{j=0}^{4}Z_jZ_{j+1}-h\sum_{j=0}^{5}X_j,
+ \label{eq:tfim}
+\end{equation}
+with $h=0.5$, $1$, and $1.5$. We call these ferromagnetic, critical, and
+paramagnetic, respectively; critical refers to the thermodynamic critical
+ratio in a finite chain. Three further targets are independent complex Haar
+states. The remaining two are normalized real random MPS with maximum bond
+dimensions two and three. The fixed amplitudes, phase convention, and
+generation seeds define the instances. All comparisons use optimizer seed
+300. The target fixture was used in developing the top-down method and is
+not an untouched algorithm-development holdout.
+
+\Cref{tab:protocol} summarizes the candidate and training policies.
+NACL searches structure and angles with a noisy objective, using OrthoMADS
+for continuous optimization~\cite{Cincio2021}. Its checkpoints at steps 0,
+10, and 50 belong to one search chain. RobustState retains the published
+combination of a noisy-output residual and a noiseless circuit
+Jacobian~\cite{RobustState2024}. We provide its feedback through exact
+density matrices, without finite-shot measurement or hardware calibration.
+The Fontana adaptation uses real $R_Y$/CX layers and noiseless BFGS followed
+by noisy BFGS~\cite{Fontana2021}. Its real-state restriction excludes the
+three complex Haar targets. The Gaussian, Ising, and two MPS fixtures are
+all supported.
+
+\input{tables/protocol}
+
+These three comparators are local implementations of published procedures
+with documented adaptations. They are not the original authors' software
+or reproductions of their device experiments. The fixed VQSP control
+optimizes independently initialized circuits at two depths. The unpruned
+layerwise control grows a circuit through four depths. These controls
+evaluate alternative complete workflows; neither is an operator-pool
+ADAPT-VQE implementation. AQCE and BAA-LRSP are outside the chosen
+noise-aware training scope. IQSP was excluded from this six-qubit comparison
+because the then-current local reconstruction failed during initialization.
+That failure provides no evidence about the published method's performance.
+The later twelve-qubit IQSP diagnostics discussed in \cref{sec:discussion}
+are separate from this ranked comparison.
+
+\subsection{Selection and exact assessment}
+
+Training, candidate selection, and final assessment use separate roles for
+the noise model. The top-down and internal-control trajectory banks contain
+100 unconditional histories and remain fixed during each refinement.
+Identical no-jump paths retain their empirical probability weights.
+Nonempty candidates whose sampled banks contain no jumps fail the coverage
+check; sampling is not conditioned or repeated to force a jump.
+
+The top-down endpoints were previously selected by the depth-search rule
+in \cref{sec:method}, using 32,768 independent validation histories per
+depth. Their archived selections remain fixed. The present comparison uses
+an independent 8,192-history validation bank for each assessed candidate;
+for a frozen top-down endpoint this is a diagnostic. Other methods select
+the eligible candidate with greatest validation fidelity within the
+declared grid. Ties are resolved by compiled CX count, CX depth, and
+candidate identifier. The selection is recorded before exact assessment.
+
+Final fidelities are obtained by exact density-matrix propagation of the
+same logical channel with the selected parameters. This integrates all
+noise outcomes and introduces no trajectory sampling error in the
+reported endpoint score. It does not remove the randomness of training
+or validation-based selection. Exact scores never replace a selected
+circuit, even if another assessed candidate has a slightly higher exact
+score. One optimizer seed per target does not support a seed-level
+significance claim.
+
+\subsection{Computational cost and implementation checks}
+
+We charge each method for all visited construction and training candidates,
+including discarded structural proposals, line-search work, and historical
+computation reused from archives. Validation and exact final assessment are
+recorded separately. Reusing a trained circuit avoids new computation but
+does not make its construction free. The full comparison contains 51
+supported method--target groups and 120 assessed circuit records, including
+nine frozen top-down endpoints. That count does not include every
+historically visited top-down depth. Their costs remain charged through the
+archived search records.
+
+A selected endpoint is Pareto-efficient in fidelity and CPU if no other
+method on the same target has at least its fidelity and no greater
+construction and training CPU, with one strict improvement. This definition
+compares complete searches at their fixed budgets. Logical two-qubit count
+and depth are reported separately from compiled CX resources. Logical
+resource counts alone do not establish equal physical execution cost across
+gate alphabets.
+
+The computations use Python 3.11.9, NumPy 2.4.6, SciPy
+1.17.1~\cite{Virtanen2020}, Qiskit 2.4.1~\cite{Qiskit2024}, and PyNomadBBO
+4.6.0 for NACL. The all-target extension uses three independent target
+processes with one numerical-library thread per worker. CPU is summed
+over the charged work, rather than inferred from parallel wall time.
+The archived manifests do not identify the host processor model, which
+limits portability of the timing measurements. These are implementation
+timings at six qubits, not hardware execution times or scaling measurements.
+
+Independent checks reconcile all candidate records, selected endpoints,
+cost totals, and Pareto sets. Stored source fingerprints and selection
+locks identify the evaluated configuration. Direct channel propagation
+also checks the final density matrices. These checks establish consistency
+of the recorded calculation; they do not certify optimizer convergence or
+broader benchmark generalization.

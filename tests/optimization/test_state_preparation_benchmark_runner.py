@@ -248,6 +248,7 @@ def test_argument_resolution_and_dry_run_cli(tmp_path: Path, capsys: pytest.Capt
     assert config.result_cells == 1
     assert dry_run
     assert not fail_fast
+    assert config.workers == "auto"
     assert main(arguments) == 0
     assert '"result_cells": 1' in capsys.readouterr().out
     assert not output.exists()
@@ -266,3 +267,103 @@ def test_method_protocol_is_runtime_compatible() -> None:
     """The custom adapter exposes the complete structural method contract."""
     method: StatePreparationMethod = CountingIdentityMethod()
     assert method.method_id == "identity_test"
+
+
+def _without_timings(rows: list[dict[str, object]]) -> list[dict[str, object]]:
+    """Remove only measured wall times, retaining every scientific result field.
+
+    Returns:
+        Scientific rows sorted by canonical run identity.
+    """
+    return sorted(
+        [{key: value for key, value in row.items() if not key.endswith("wall_time_seconds")} for row in rows],
+        key=lambda row: str(row["run_id"]),
+    )
+
+
+def test_multitarget_parallel_matches_serial_and_resumes_across_worker_counts(tmp_path: Path) -> None:
+    """Four target families have identical trained and noisy results across workers."""
+    config = replace(
+        _config(tmp_path / "serial"),
+        target_ids=("gaussian_mu0p5_sigma0p1", "tfim_critical", "haar_random_1", "random_mps_bond2"),
+        method_ids=("krotov_batch",),
+        optimizer_iterations=1,
+    )
+    serial = run_benchmark(config, fail_fast=True)
+    parallel_config = replace(config, output_directory=tmp_path / "parallel", workers=2)
+    parallel = run_benchmark(parallel_config, fail_fast=True)
+    serial_rows, parallel_rows = _rows(serial.results_path), _rows(parallel.results_path)
+    assert _without_timings(serial_rows) == _without_timings(parallel_rows)
+    assert parallel.trained_runs == serial.trained_runs == 4
+    assert parallel.successful_rows == serial.successful_rows == 12
+    assert parallel_config.manifest_dict() == config.manifest_dict()
+    retained = parallel.results_path.read_bytes()
+    resumed = run_benchmark(replace(parallel_config, workers="auto", resume=True), fail_fast=True)
+    assert resumed.skipped_rows == 12
+    assert resumed.workers == 0
+    assert resumed.worker_pids == ()
+    assert parallel.results_path.read_bytes() == retained
+
+    # Interrupt-like loss of two evaluation rows: reuse trained checkpoints,
+    # restore exactly those rows, and permit a different worker allocation.
+    partial_rows = parallel_rows[2:]
+    parallel.results_path.write_text("".join(f"{json.dumps(row)}\n" for row in partial_rows), encoding="utf-8")
+    repaired = run_benchmark(replace(parallel_config, resume=True, workers=1), fail_fast=True)
+    assert repaired.trained_runs == 0
+    assert repaired.reused_checkpoints >= 1
+    assert repaired.skipped_rows == 10
+    assert _without_timings(_rows(repaired.results_path)) == _without_timings(serial_rows)
+
+
+@dataclass
+class FailingMethod:
+    """Picklable failed optimizer for parent-owned failure reporting tests."""
+
+    method_id: str = "failing_test"
+
+    def train(
+        self,
+        circuit: ParameterizedCircuit,
+        target: NDArray[np.complex128],
+        initial_theta: NDArray[np.float64],
+        settings: TrainingSettings,
+    ) -> TrainingOutcome:
+        """Raise a controlled training error.
+
+        Raises:
+            ValueError: Always, to test parallel failure recording.
+        """
+        assert target.shape == (2**circuit.num_qubits,)
+        assert initial_theta.shape == (circuit.num_params,)
+        assert settings.iterations >= 0
+        msg = f"{self.method_id}: intentional training failure"
+        raise ValueError(msg)
+
+
+@pytest.mark.parametrize("fail_fast", [False, True])
+def test_parallel_failure_rows_are_retained(tmp_path: Path, *, fail_fast: bool) -> None:
+    """The coordinator records errors before propagating a fail-fast exception."""
+    config = replace(
+        _config(tmp_path / "failures"),
+        target_ids=("gaussian_mu0p5_sigma0p1", "tfim_critical"),
+        method_ids=("failing_test",),
+        workers=2,
+    )
+    if fail_fast:
+        with pytest.raises(ValueError, match="intentional training failure"):
+            run_benchmark(config, methods={"failing_test": FailingMethod()}, fail_fast=True)
+    else:
+        result = run_benchmark(config, methods={"failing_test": FailingMethod()})
+        assert result.failed_rows == 6
+        assert result.successful_rows == 0
+    rows = _rows(config.output_directory / "results.jsonl")
+    assert rows
+    assert all(row["status"] == "failed" and row["failure_phase"] == "training" for row in rows)
+
+
+def test_explicit_worker_cli_and_invalid_config(tmp_path: Path) -> None:
+    """CLI permits an explicit serial override and rejects invalid API counts."""
+    config, _dry_run, _fail_fast = resolve_arguments(["--preset", "smoke", "--workers", "1"])
+    assert config.workers == 1
+    with pytest.raises(ValueError, match="workers"):
+        replace(_config(tmp_path / "invalid"), workers=0)

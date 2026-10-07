@@ -1,0 +1,42 @@
+{
+  "name": "synthesis-wave1",
+  "phase": "development",
+  "replicas": [11],
+  "targets": [
+    "gaussian_mu0p5_sigma0p1",
+    "tfim_critical",
+    "haar_random_1",
+    "random_mps_bond2"
+  ],
+  "methods": {
+    "rank2_unchanged": { "method": "unchanged", "iterations": 0 },
+    "rank2_exact_adam_600": {
+      "method": "adam",
+      "iterations": 600,
+      "rate": 0.02,
+      "checkpoint_every": 1
+    },
+    "rank2_lbfgs_600": {
+      "method": "lbfgs",
+      "iterations": 599,
+      "evaluations": 600,
+      "history": 10
+    }
+  },
+  "reference_panel": "focused_curvature",
+  "reference_methods": [
+    "exact_adam_600",
+    "lbfgs_600",
+    "weighted_adam_600",
+    "noiseless_adam_600"
+  ],
+  "construction": "One fixed rank-two SVD sweep, sequential physical preparation from zero, exact unsimplified Weyl lowering; no residual layers or target-specific tuning.",
+  "physical_gate_rule": "All 63 one-qubit and 15 two-qubit scalar rotations count, including zero angles. Only the unchanged Ballarin materializer applies its fixed pruning and noiseless basis changes.",
+  "training_objective": "Exact calibrated local depolarization, depolarizing_1s_all, unchanged benchmark calibration.",
+  "endpoint_rule": "Final accepted iterate; no best-checkpoint selection. Every arm starts independently from the same synthesized parameters with fresh optimizer memory.",
+  "evaluation_rule": "Evaluate all twelve fixed benchmark profiles on each final circuit. Reuse authenticated full-profile focused_curvature reference scores.",
+  "cost_rule": "Construct once physically per target and charge the full construction CPU and gates to every rank-two arm. Report refinement, diagnostics, evaluation and all invocation attempt CPU separately. Exact Adam has 600 gradient calls; L-BFGS has at most 600 objective-gradient calls. Diagnostic and final evaluation calls are outside these caps.",
+  "reference_rule": "UNMATCHED original 108-gate focused_curvature endpoints; different construction and cost. Their original construction cost is unavailable, so do not infer matched total-cost superiority.",
+  "failure_rule": "Retain every target, method and condition. Numerical failures produce explicit missing-score rows; custody/configuration failures abort. Retained failures are terminal for this frozen panel.",
+  "primary": "Equal target mean over eleven noisy conditions, accompanied by all per-target results, physical gate counts and complete construction/refinement costs. No pooling with unmatched references into a paired claim."
+}

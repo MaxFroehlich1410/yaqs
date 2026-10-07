@@ -1,0 +1,35 @@
+{
+  "name": "focused_curvature",
+  "phase": "development",
+  "replicas": [11, 29],
+  "targets": [
+    "gaussian_mu0p5_sigma0p1",
+    "tfim_critical",
+    "haar_random_1",
+    "random_mps_bond2"
+  ],
+  "methods": {
+    "lbfgs_600": {
+      "method": "lbfgs",
+      "iterations": 599,
+      "evaluations": 600,
+      "history": 10
+    },
+    "exact_adam_600": {
+      "method": "adam",
+      "iterations": 600,
+      "rate": 0.02
+    },
+    "weighted_adam_600": {
+      "method": "weighted_adam",
+      "iterations": 600,
+      "paths": 32,
+      "rate": 0.02
+    },
+    "noiseless_adam_600": {
+      "method": "noiseless_adam",
+      "iterations": 600,
+      "rate": 0.02
+    }
+  }
+}

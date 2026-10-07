@@ -1,0 +1,56 @@
+{
+  "purpose": "Golden first derivatives from existing author regularized formula before memory-only streamed accumulation; no redefinition of degeneracy behavior",
+  "seed": 61540,
+  "source_sha256": "51fcdd1e26b4dcb4dbc41780cd2aeda2feb056f982636358739c318851285a02",
+  "torch_version": "2.14.0",
+  "cases": [
+    {
+      "case": 0,
+      "shape": [8, 4],
+      "complex": false,
+      "degenerate_and_null": false
+    },
+    {
+      "case": 1,
+      "shape": [4, 8],
+      "complex": false,
+      "degenerate_and_null": false
+    },
+    {
+      "case": 2,
+      "shape": [5, 5],
+      "complex": false,
+      "degenerate_and_null": false
+    },
+    {
+      "case": 3,
+      "shape": [8, 4],
+      "complex": false,
+      "degenerate_and_null": true
+    },
+    {
+      "case": 4,
+      "shape": [8, 4],
+      "complex": true,
+      "degenerate_and_null": false
+    },
+    {
+      "case": 5,
+      "shape": [4, 8],
+      "complex": true,
+      "degenerate_and_null": false
+    },
+    {
+      "case": 6,
+      "shape": [5, 5],
+      "complex": true,
+      "degenerate_and_null": false
+    },
+    {
+      "case": 7,
+      "shape": [8, 4],
+      "complex": true,
+      "degenerate_and_null": true
+    }
+  ]
+}

@@ -1,0 +1,161 @@
+\section{Numerical results}
+\label{sec:results}
+
+We first compare the exact noisy fidelity of the validation-selected
+circuits across all targets. We then include the classical and circuit
+resources required to obtain those endpoints. The native-gate pilot tests
+how much of the resulting interpretation survives a different placement
+of the noise windows.
+
+\subsection{Fidelity across target families}
+
+\Cref{fig:fidelity} shows the complete logical-noise comparison. The
+top-down workflow attains the highest selected-endpoint fidelity on five
+of nine targets. Its mean fidelity is 92.260\%, compared with 91.019\% for
+RobustState. The paired mean difference is 1.241 percentage points, with
+five wins and four losses. These are descriptive comparisons of the
+selected circuits, without an estimate of optimizer-seed variability.
+
+\begin{figure*}[t]
+ \centering
+ \includegraphics[width=\textwidth]{figures/fidelity.pdf}
+ \caption{\textbf{Selected fidelity under logical-gate noise.}
+ (a) Exact density-matrix fidelity for the nine fixed six-qubit targets,
+ optimizer seed 300, and the synthetic Pauli profile in
+ \cref{eq:jump_law}. Each value refers to a circuit selected by independent
+ validation, with archived top-down selections retained. Fontana excludes
+ the three complex Haar targets. Bold entries mark the highest fidelity
+ for each target. (b) Paired top-down minus RobustState differences in
+ percentage points; blue and orange denote positive and negative values.
+ The top-down workflow has the highest fidelity on five targets.
+ Exact endpoint scores have no trajectory sampling error, while
+ optimizer-seed variability remains unmeasured.}
+ \label{fig:fidelity}
+\end{figure*}
+
+The six real-valued targets give the strongest results for the top-down
+method. Their mean fidelity is 95.885\%, compared with 94.153\% for
+RobustState. The top-down method wins on Gaussian, ferromagnetic and
+critical Ising, and bond-two MPS. RobustState is better on paramagnetic
+Ising and bond-three MPS by 0.237 and 0.249 percentage points, respectively.
+This division describes the tested fixture. It does not isolate real
+amplitudes, entanglement, or another target property as the cause.
+
+The complex Haar targets expose a different regime. RobustState is more
+accurate on Haar 1 and Haar 3, with gaps of 1.132 and 0.551 percentage
+points. On Haar 2, the top-down method instead gains 2.463 percentage
+points. Thus even these three targets do not produce a uniform ranking.
+Their top-down fidelities remain between 84.811\% and 85.250\%, below the
+95.272--96.472\% range of the six real targets.
+
+Fontana is supported on the six real targets only. On that common subset,
+the top-down workflow wins in all six cases, with a mean advantage of
+3.875 percentage points. Fontana's six-target mean must be interpreted on
+this subset, rather than compared with nine-target means. NACL has lower
+fidelity on all nine targets at the declared 50-step structural-search
+budget. The result characterizes that finite search and does not establish
+the performance of a converged NACL implementation.
+
+The top-down workflow also exceeds both internal controls in fidelity on
+every target. The mean improvements are 4.611 percentage points over
+fixed VQSP and 2.929 over the unpruned layerwise control. The controls
+differ in candidate grids and optimization policies, so these results
+support the complete preparation workflow without assigning the gain
+to pruning or noisy refinement alone.
+
+\subsection{Classical cost and circuit resources}
+
+\Cref{fig:pareto} combines selected fidelity with full construction and
+training CPU. The top-down workflow is Pareto-efficient on seven of nine
+targets, both against the external adaptations alone and when the internal
+controls are included. Across the complete fixture it uses 285.17 CPU
+seconds, compared with 256.52 for RobustState, an increase of 11.17\%.
+The modest aggregate fidelity advantage therefore has an aggregate
+classical cost.
+
+\begin{figure*}[t]
+ \centering
+ \includegraphics[width=\textwidth]{figures/pareto.pdf}
+ \caption{\textbf{Fidelity versus complete construction and training cost.}
+ Each panel compares the selected endpoints for one target under the
+ logical-gate noise model. CPU includes every visited candidate and the
+ historical work of reused searches; it excludes validation and final
+ assessment. The horizontal axes are logarithmic. The marked Pareto
+ frontiers use all supported methods, including controls. Connections
+ identify the discrete frontier and do not represent an interpolated
+ performance curve. The top-down workflow is nondominated on seven
+ targets; RobustState dominates it on Haar 1 and Haar 3.}
+ \label{fig:pareto}
+\end{figure*}
+
+The cost separates sharply by target subset. On the six real targets,
+top-down construction and training take 103.81 CPU seconds, compared with
+170.92 for RobustState, a reduction of 39.27\%. Top-down is faster on each
+of these targets. The two small fidelity losses to RobustState therefore
+remain fidelity--runtime trade-offs. Fontana is substantially cheaper
+still, taking 31.37 CPU seconds on the same six targets. The top-down
+method's paired fidelity advantage over Fontana costs 3.31 times as much
+classical computation.
+
+RobustState dominates top-down on Haar 1 and Haar 3 in both fidelity and
+CPU. It also uses fewer logical two-qubit gates and less two-qubit depth.
+On Haar 2, the top-down fidelity gain costs 53.16 rather than 29.35 CPU
+seconds and requires 38 rather than 20 logical two-qubit gates. Higher
+fidelity on this target is therefore obtained with more classical work
+and a larger logical circuit.
+
+The fixed VQSP control is cheaper overall, at 115.88 CPU seconds, while
+the layerwise control takes 354.24 seconds. The latter has both lower
+mean fidelity and greater aggregate CPU than top-down. Aggregate values
+do not replace the per-target Pareto comparisons. Full fidelity and
+resource tables are included in the appendices.
+
+These costs charge the complete method histories. The extension campaign
+itself took 374.21 seconds of wall time and performed 966.96 CPU seconds
+of fresh construction and training. Including historical work, the
+charged total across all methods is 1,753.68 CPU seconds. The campaign
+wall time is consequently not a measure of any single method's cost.
+
+\subsection{Native-gate noise}
+
+The logical comparison assigns one arity-dependent window to every
+original elementary gate. To examine the effect of native implementation,
+we also report the matched three-target pilot in \cref{tab:native}.
+Its circuits are trained, selected, and assessed with noise after a frozen
+$R_Z$/SX/$X$/CX schedule. The top-down method reuses the same noiseless
+construction and pruning B checkpoints, followed by native refinement.
+All historical construction work is charged.
+
+\input{tables/native_results}
+
+The native comparison is less favorable to top-down. On Gaussian,
+Fontana reaches 94.144\% fidelity at 19.66 CPU seconds, compared with
+92.891\% at 26.17 seconds for top-down. On Haar 1, RobustState reaches
+82.090\% at 52.24 seconds, compared with 70.220\% at 79.84 seconds.
+Both competitors also use fewer CX gates on the corresponding target.
+These are direct counterexamples to a uniform native advantage.
+
+Critical Ising retains a fidelity--runtime trade-off. Top-down reaches
+90.062\%, compared with 90.334\% for RobustState, while taking 33.46
+rather than 52.29 CPU seconds. Its 36.0\% CPU saving accompanies a
+0.272-percentage-point fidelity loss and 26 rather than 10 CX gates.
+Fontana is faster than either at 9.65 seconds, with 88.005\% fidelity.
+
+After native selection was locked, a separate diagnostic evaluated the
+earlier logically trained parameters on the same frozen native schedules
+at the selected depths. Relative to those parameters, native refinement
+changed fidelity by $-0.021$, $-0.026$, and $+0.020$ percentage points for
+Gaussian, critical Ising, and Haar 1. The small changes do not show a
+substantial benefit from changing the training noise location in this
+pilot. They also should not be confused with the larger differences from
+earlier numerically compiled deployment circuits, which involve schedule
+changes and, for Haar 1, a different selected depth.
+
+Native refinement nevertheless improves upon the pruned starting circuits
+by 0.974, 4.446, and 3.842 percentage points, respectively. The absence of
+a further gain over logical training on the matched schedules is a
+different observation from the gain obtained by refining the pruned input.
+The pilot uses one seed and three targets, with 32,768-path top-down
+validation and the competitors' retained 8,192-path selections. It limits
+the interpretation of the logical results without establishing a general
+native-gate ranking.

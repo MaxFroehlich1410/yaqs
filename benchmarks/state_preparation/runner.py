@@ -13,6 +13,8 @@ import argparse
 import hashlib
 import itertools
 import json
+import logging
+import os
 import shutil
 import sys
 import time
@@ -40,6 +42,7 @@ from .constants import (
     SUPPORTED_QUBIT_COUNTS,
     TARGET_IDS,
 )
+from .execution import WorkerSetting, completed_jobs, parse_workers, resolve_workers
 from .methods import DEFAULT_METHODS, StatePreparationMethod, TrainingOutcome, TrainingSettings
 from .noise import StandardNoiseProvider
 from .statistics import circuit_statistics, fidelity_estimate
@@ -55,6 +58,7 @@ RESULTS_NAME = "results.jsonl"
 MANIFEST_NAME = "manifest.json"
 CHECKPOINT_DIRECTORY = "checkpoints"
 _UINT64_MODULUS = 2**64
+LOGGER = logging.getLogger(__name__)
 
 
 class BenchmarkError(RuntimeError):
@@ -80,6 +84,7 @@ class BenchmarkConfig:
     initial_single_qubit_layer: bool = True
     resume: bool = False
     overwrite: bool = False
+    workers: WorkerSetting = 1
 
     def __post_init__(self) -> None:
         """Validate identifiers, budgets, and mutually exclusive actions.
@@ -126,10 +131,11 @@ class BenchmarkConfig:
         if self.resume and self.overwrite:
             msg = "resume and overwrite are mutually exclusive."
             raise ValueError(msg)
+        resolve_workers(self.workers, self.training_runs)
 
     @property
     def result_cells(self) -> int:
-        """Return the number of result rows in the expanded matrix."""
+        """Number of result rows in the expanded matrix."""
         return (
             len(self.num_qubits)
             * len(self.target_ids)
@@ -141,7 +147,7 @@ class BenchmarkConfig:
 
     @property
     def training_runs(self) -> int:
-        """Return the number of train-once optimization jobs."""
+        """Number of train-once optimization jobs."""
         return self.result_cells // len(self.noise_ids)
 
     def manifest_dict(self) -> dict[str, object]:
@@ -173,6 +179,8 @@ class BenchmarkSummary:
     trained_runs: int
     reused_checkpoints: int
     results_path: Path
+    workers: int
+    worker_pids: tuple[int, ...]
 
 
 def _validate_selection(
@@ -321,7 +329,9 @@ class _ResultStore:
         """Persist one new or replacement row atomically."""
         run_id = cast("str", row["run_id"])
         self.rows[run_id] = row
-        encoded = "".join(f"{json.dumps(value, sort_keys=True, allow_nan=False)}\n" for value in self.rows.values())
+        encoded = "".join(
+            f"{json.dumps(self.rows[key], sort_keys=True, allow_nan=False)}\n" for key in sorted(self.rows)
+        )
         _atomic_write(self.path, encoded)
 
 
@@ -384,7 +394,10 @@ def _save_checkpoint(path: Path, identity: Mapping[str, object], outcome: Traini
         "trace": {key: list(values) for key, values in outcome.trace.items()},
         "wall_time_seconds": outcome.wall_time_seconds,
     }
-    np.savez_compressed(path, theta=outcome.theta, metadata=np.asarray(_canonical_json(metadata)))
+    temporary = path.with_name(f".{path.name}.tmp")
+    with temporary.open("wb") as stream:
+        np.savez_compressed(stream, theta=outcome.theta, metadata=np.asarray(_canonical_json(metadata)))
+    temporary.replace(path)
 
 
 def _load_checkpoint(
@@ -598,6 +611,98 @@ def _train_or_load(
     return outcome, reused, train_fidelity
 
 
+@dataclass(frozen=True)
+class _TrainingJob:
+    """Picklable independent training job with its exact target-vector bytes."""
+
+    config: BenchmarkConfig
+    method: StatePreparationMethod
+    target_data: tuple[int, str, int | None, float, bytes]
+    depth: int
+    initialization_seed: int
+    pending: tuple[str, ...]
+    fail_fast: bool
+
+
+@dataclass
+class _TrainingJobResult:
+    """Rows returned to the sole result-store writer in the parent process."""
+
+    rows: list[dict[str, object]]
+    trained: bool = False
+    reused: bool = False
+    error: Exception | None = None
+    worker_pid: int = 0
+
+
+def _run_training_job(job: _TrainingJob) -> _TrainingJobResult:
+    """Train once and evaluate pending noise conditions without shared writes.
+
+    Returns:
+        Completed rows, checkpoint counters, and any fail-fast error.
+    """
+    config = job.config
+    num_qubits, target_id, seed, norm, vector_bytes = job.target_data
+    # Immutable generation metadata stays in the fixture/manifest; workers only
+    # need the exact vector and identity. MappingProxyType itself is not picklable.
+    target = TargetRecord(num_qubits, target_id, seed, norm, {}, vector_bytes)
+    identities = {
+        noise_id: _run_identity(config, job.method.method_id, target, job.depth, job.initialization_seed, noise_id)
+        for noise_id in job.pending
+    }
+    result = _TrainingJobResult(rows=[], worker_pid=os.getpid())
+    training_identity = _training_identity(config, job.method.method_id, target, job.depth, job.initialization_seed)
+    checkpoint_path = _checkpoint_path(config, training_identity)
+    try:
+        circuit = create_brickwall_matrix_product_disentangler_parameterized_circuit(
+            target.num_qubits, job.depth, initial_single_qubit_layer=config.initial_single_qubit_layer
+        )
+        outcome, reused, train_fidelity = _train_or_load(
+            config, job.method, circuit, target, job.initialization_seed, training_identity, checkpoint_path
+        )
+    except Exception as error:
+        LOGGER.exception("Training failed for %s", training_identity)
+        result.rows = [_failure_row(identities[noise_id], error, "training") for noise_id in job.pending]
+        result.error = error if job.fail_fast else None
+        return result
+    result.trained = not reused
+    result.reused = reused
+    for noise_id in job.pending:
+        identity = identities[noise_id]
+        test_seed = None
+        if noise_id != NOISELESS_NOISE_ID:
+            root_seed = (job.initialization_seed + 2) % _UINT64_MODULUS
+            test_seed = derive_seed(root_seed, "final-test", noise_id)
+        started = time.perf_counter()
+        try:
+            noisy_fidelity, values, circuit_data = _evaluate_noise(
+                config, circuit, outcome.theta, target, noise_id, 0 if test_seed is None else test_seed
+            )
+            row = _success_row(
+                config=config,
+                identity=identity,
+                target=target,
+                outcome=outcome,
+                train_fidelity=train_fidelity,
+                noiseless_fidelity=train_fidelity,
+                noisy_fidelity=noisy_fidelity,
+                trajectory_fidelities=values,
+                test_seed=test_seed,
+                circuit_data=circuit_data,
+                checkpoint_path=checkpoint_path,
+                evaluation_wall_time=time.perf_counter() - started,
+            )
+        except Exception as error:
+            LOGGER.exception("Evaluation failed for %s", identity)
+            row = _failure_row(identity, error, "evaluation")
+            if job.fail_fast:
+                result.rows.append(row)
+                result.error = error
+                return result
+        result.rows.append(row)
+    return result
+
+
 def run_benchmark(
     config: BenchmarkConfig,
     *,
@@ -610,7 +715,8 @@ def run_benchmark(
     Args:
         config: Fully resolved benchmark configuration.
         methods: Optional adapter registry. This is the extension point for
-            algorithms other than the bundled Krotov reference.
+            algorithms other than the bundled Krotov reference. Adapters must
+            be picklable for parallel runs; their mutable state is worker-local.
         targets: Optional preloaded target collection.
         fail_fast: Whether to re-raise the first training or evaluation error.
 
@@ -631,6 +737,7 @@ def run_benchmark(
     trained_runs = 0
     reused_checkpoints = 0
     skipped_rows = 0
+    jobs: list[_TrainingJob] = []
 
     training_cells = itertools.product(
         config.method_ids,
@@ -657,68 +764,33 @@ def run_benchmark(
         if not pending:
             continue
 
-        circuit = create_brickwall_matrix_product_disentangler_parameterized_circuit(
-            target.num_qubits,
-            depth,
-            initial_single_qubit_layer=config.initial_single_qubit_layer,
-        )
-        training_identity = _training_identity(config, method_id, target, depth, initialization_seed)
-        checkpoint_path = _checkpoint_path(config, training_identity)
-        try:
-            outcome, reused, train_fidelity = _train_or_load(
-                config,
-                method,
-                circuit,
-                target,
-                initialization_seed,
-                training_identity,
-                checkpoint_path,
+        jobs.append(
+            _TrainingJob(
+                config=config,
+                method=method,
+                target_data=(
+                    target.num_qubits,
+                    target.target_id,
+                    target.seed,
+                    target.norm,
+                    target.state_vector.tobytes(),
+                ),
+                depth=depth,
+                initialization_seed=initialization_seed,
+                pending=tuple(pending),
+                fail_fast=fail_fast,
             )
-        except Exception as error:
-            for noise_id in pending:
-                store.upsert(_failure_row(identities[noise_id], error, "training"))
-            if fail_fast:
-                raise
-            continue
-        trained_runs += not reused
-        reused_checkpoints += reused
+        )
 
-        for noise_id in pending:
-            identity = identities[noise_id]
-            test_seed = None
-            if noise_id != NOISELESS_NOISE_ID:
-                root_seed = (initialization_seed + 2) % _UINT64_MODULUS
-                test_seed = derive_seed(root_seed, "final-test", noise_id)
-            started = time.perf_counter()
-            try:
-                noisy_fidelity, values, circuit_data = _evaluate_noise(
-                    config,
-                    circuit,
-                    outcome.theta,
-                    target,
-                    noise_id,
-                    0 if test_seed is None else test_seed,
-                )
-                row = _success_row(
-                    config=config,
-                    identity=identity,
-                    target=target,
-                    outcome=outcome,
-                    train_fidelity=train_fidelity,
-                    noiseless_fidelity=train_fidelity,
-                    noisy_fidelity=noisy_fidelity,
-                    trajectory_fidelities=values,
-                    test_seed=test_seed,
-                    circuit_data=circuit_data,
-                    checkpoint_path=checkpoint_path,
-                    evaluation_wall_time=time.perf_counter() - started,
-                )
-            except Exception as error:
-                row = _failure_row(identity, error, "evaluation")
-                if fail_fast:
-                    store.upsert(row)
-                    raise
+    worker_pids: set[int] = set()
+    for _index, result in completed_jobs(_run_training_job, jobs, workers=config.workers):
+        worker_pids.add(result.worker_pid)
+        for row in result.rows:
             store.upsert(row)
+        trained_runs += result.trained
+        reused_checkpoints += result.reused
+        if result.error is not None:
+            raise result.error
 
     selected_run_ids = {
         _checksum(_run_identity(config, method_id, target, depth, seed, noise_id))
@@ -739,6 +811,8 @@ def run_benchmark(
         trained_runs=trained_runs,
         reused_checkpoints=reused_checkpoints,
         results_path=config.output_directory / RESULTS_NAME,
+        workers=resolve_workers(config.workers, len(jobs)),
+        worker_pids=tuple(sorted(worker_pids)),
     )
 
 
@@ -757,6 +831,9 @@ def _argument_parser() -> argparse.ArgumentParser:
     parser.add_argument("--optimizer-step-size", type=float)
     parser.add_argument("--test-trajectories", type=int)
     parser.add_argument("--tjm-dt", type=float)
+    parser.add_argument(
+        "--workers", type=parse_workers, default="auto", help="Worker processes: auto or a positive count."
+    )
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
@@ -768,7 +845,7 @@ def resolve_arguments(arguments: Sequence[str] | None = None) -> tuple[Benchmark
     """Return command-line arguments resolved over one frozen preset."""
     args = _argument_parser().parse_args(arguments)
     config = preset_config(args.preset, args.output_dir)
-    replacements: dict[str, object] = {"overwrite": args.overwrite, "resume": args.resume}
+    replacements: dict[str, object] = {"overwrite": args.overwrite, "resume": args.resume, "workers": args.workers}
     for argument_name, field_name in (
         ("num_qubits", "num_qubits"),
         ("target_id", "target_ids"),
@@ -795,9 +872,13 @@ def main(arguments: Sequence[str] | None = None) -> int:
     """
     config, dry_run, fail_fast = resolve_arguments(arguments)
     if dry_run:
-        sys.stdout.write(
-            f"{json.dumps({'config': config.manifest_dict(), 'result_cells': config.result_cells}, indent=2)}\n"
-        )
+        payload = {
+            "config": config.manifest_dict(),
+            "result_cells": config.result_cells,
+            "workers": resolve_workers(config.workers, config.training_runs),
+            "numerical_threads_per_worker": 1,
+        }
+        sys.stdout.write(f"{json.dumps(payload, indent=2)}\n")
         return 0
     summary = run_benchmark(config, fail_fast=fail_fast)
     summary_payload = {
@@ -808,6 +889,9 @@ def main(arguments: Sequence[str] | None = None) -> int:
         "skipped_rows": summary.skipped_rows,
         "successful_rows": summary.successful_rows,
         "trained_runs": summary.trained_runs,
+        "workers": summary.workers,
+        "worker_pids": list(summary.worker_pids),
+        "numerical_threads_per_worker": 1,
     }
     sys.stdout.write(f"{json.dumps(summary_payload, indent=2)}\n")
     return 1 if summary.failed_rows else 0

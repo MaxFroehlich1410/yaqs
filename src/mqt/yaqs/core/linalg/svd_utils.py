@@ -9,14 +9,49 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
+from contextvars import ContextVar
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 
 if TYPE_CHECKING:
+    from collections.abc import Callable, Iterator
+
     from numpy.typing import NDArray
 
 TruncMode = Literal["discarded_weight", "relative", "hard_cutoff"]
+
+
+@dataclass(frozen=True)
+class TruncationEvent:
+    """Actual local SVD decision; discarded weight is not a global error bound."""
+
+    available: int
+    kept: int
+    discarded_weight: float
+    capped: bool
+
+
+_observer: ContextVar[Callable[[TruncationEvent], None] | None] = ContextVar("svd_observer", default=None)
+
+
+@contextmanager
+def observe_truncations(observer: Callable[[TruncationEvent], None]) -> Iterator[None]:
+    """Observe local SVD decisions in this context, restoring on exceptions.
+
+    Nested scopes restore the preceding observer. Threads have independent
+    contexts. The observer receives scalars and cannot mutate the SVD arrays.
+
+    Yields:
+        None while the observer is active.
+    """
+    token = _observer.set(observer)
+    try:
+        yield
+    finally:
+        _observer.reset(token)
 
 
 def truncate(
@@ -80,4 +115,15 @@ def truncate(
     if max_bond_dim is not None:
         keep = min(keep, max_bond_dim)
     keep = max(keep, min_keep)
-    return min(keep, n)
+    keep = min(keep, n)
+    observer = _observer.get()
+    if observer is not None:
+        observer(
+            TruncationEvent(
+                n,
+                keep,
+                float(np.sum(np.abs(s_vec[keep:]) ** 2)),
+                max_bond_dim is not None and n > max_bond_dim and keep == max_bond_dim,
+            )
+        )
+    return keep

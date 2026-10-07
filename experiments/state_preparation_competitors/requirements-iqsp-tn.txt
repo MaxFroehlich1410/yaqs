@@ -1,0 +1,6 @@
+# Optional exact tensor-network IQSP adapter; isolated from the project lock.
+numpy==2.4.6
+scipy==1.17.1
+qiskit==2.4.1
+torch==2.14.0
+opt_einsum==3.4.0
