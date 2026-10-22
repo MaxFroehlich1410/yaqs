@@ -1,0 +1,16 @@
+{
+  "format": "yaqs.state_preparation_targets.native_mps.v1",
+  "num_qubits": 30,
+  "bond": 2,
+  "seed": 5002,
+  "target_id": "random_mps_bond2",
+  "basis_order": "site i is bit i of the little-endian amplitude index",
+  "global_phase": "all-zero amplitude positive real",
+  "generator": "numpy.default_rng(seed).standard_normal; open-boundary physical/left/right tensors",
+  "numpy_version": "2.4.6",
+  "array": {
+    "file": "target.npz",
+    "sha256": "99b5dade93bc3de25840d4d867199e446dc96b49fe02714802510e314d3c6568"
+  },
+  "tensor_bytes": 3712
+}

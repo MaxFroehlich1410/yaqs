@@ -22,10 +22,13 @@ from threadpoolctl import threadpool_limits
 
 from benchmarks.state_preparation.targets import load_target, load_target_collection
 from experiments import topdown_random_mps_initialization as base
-from mqt.yaqs.optimization import ParameterizedCircuit, StatevectorBackend
+from mqt.yaqs.optimization import MPSBackend, ParameterizedCircuit, StatevectorBackend
+from mqt.yaqs.optimization.mps_backend import mps_overlap
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray
+
+    from mqt.yaqs.core.data_structures.mps import MPS
 
 VERSION = "topdown.product_screening.v1"
 ARMS = ("near_zero", "random_product", "screened_product")
@@ -145,6 +148,107 @@ def initial_parameters(
         "paired_parameters": "unchanged outside the existing initial U3 layer",
     })
     return metadata, {**arrays, "theta": theta}
+
+
+def screen_products_mps(target: MPS, count: int = 1000, seed: int = 300, batch_size: int = 64) -> tuple[dict, dict]:
+    """Screen the identical product-state pool by polynomial-size MPS contractions.
+
+    Returns:
+        The original selection metadata and angles/scores, without dense vectors.
+
+    Raises:
+        ValueError: If tensor shapes, normalization or sampling settings are invalid.
+    """
+    if (
+        type(count) is not int
+        or count < 1
+        or type(batch_size) is not int
+        or batch_size < 1
+        or type(seed) is not int
+        or not 0 <= seed < 2**32
+    ):
+        msg = "Require positive integer sample/batch counts and a valid seed."
+        raise ValueError(msg)
+    if (
+        target.length < 2
+        or target.flipped
+        or len(target.tensors) != target.length
+        or any(t.ndim != 3 or t.shape[0] != 2 or not np.all(np.isfinite(t)) for t in target.tensors)
+        or target.tensors[0].shape[1] != 1
+        or target.tensors[-1].shape[2] != 1
+        or any(a.shape[2] != b.shape[1] for a, b in zip(target.tensors[:-1], target.tensors[1:], strict=True))
+        or abs(mps_overlap(target, target) - 1) > 1e-10
+    ):
+        msg = "Require a finite normalized, unflipped open-boundary qubit MPS."
+        raise ValueError(msg)
+    qubits = target.length
+    rng = np.random.default_rng(np.random.SeedSequence([seed, 730002]))
+    draw = rng.random((count, 2, qubits))
+    probability, phase = draw[:, 0], 2 * np.pi * draw[:, 1]
+    fidelity = np.empty(count + 1)
+    zero = np.ones(1, dtype=complex)
+    for tensor in target.tensors:
+        zero = np.matmul(zero, tensor[0])
+    fidelity[0] = abs(zero[0]) ** 2
+    for start in range(0, count, batch_size):
+        end = min(count, start + batch_size)
+        environment = np.ones((end - start, 1), dtype=complex)
+        for site, tensor in enumerate(target.tensors):
+            local = np.column_stack((
+                np.sqrt(1 - probability[start:end, site]),
+                np.exp(1j * phase[start:end, site]) * np.sqrt(probability[start:end, site]),
+            ))
+            environment = np.einsum("bi,bp,pij->bj", environment, local.conj(), tensor, optimize=True)
+        fidelity[start + 1 : end + 1] = np.abs(environment[:, 0]) ** 2
+    index = int(np.argmax(fidelity))
+    return {
+        "count": count,
+        "candidate_count": count + 1,
+        "seed_entropy": [seed, 730002],
+        "batch_size": batch_size,
+        "selected_index": index,
+        "selected_source": "zero" if index == 0 else "random_product",
+        "selected_product_fidelity": float(fidelity[index]),
+        "zero_state_fidelity": float(fidelity[0]),
+        "random_mean_fidelity": float(fidelity[1:].mean()),
+        "random_maximum_fidelity": float(fidelity[1:].max()),
+        "selection": "maximum exact target overlap before entanglers; zero wins exact ties",
+        "representation": "native_mps",
+        "basis_order": "little endian: site i is bit i",
+    }, {
+        "fidelity": fidelity,
+        "polar": np.vstack((np.zeros(qubits), np.arccos(1 - 2 * probability))),
+        "azimuth": np.vstack((np.zeros(qubits), phase)),
+    }
+
+
+def initial_parameters_mps(target: MPS, seed: int, count: int = 1000, batch_size: int = 64) -> tuple[dict, dict]:
+    """Encode the selected product in the unchanged brickwall initialization stream.
+
+    Returns:
+        Selection diagnostics and the complete depth-one parameter vector.
+    """
+    start = time.process_time()
+    record, arrays = screen_products_mps(target, count, seed, batch_size)
+    base.Budget().validate(seed)
+    circuit = base.capacity.continuation.brickwall(target.length, 1, initial_single_qubit_layer=True)
+    theta = base.capacity.continuation.legacy.extend(None, circuit.num_params, seed + 1001, 0.05)
+    index = record["selected_index"]
+    theta[: 3 * target.length] = np.column_stack((
+        arrays["polar"][index],
+        arrays["azimuth"][index],
+        np.zeros(target.length),
+    )).ravel()
+    record.update({
+        "arm": "screened_product",
+        "seed": seed,
+        "parameter_seed": seed + 1001,
+        "product_state_fidelity": record["selected_product_fidelity"],
+        "initial_circuit_fidelity": MPSBackend(circuit, target).metrics(theta)[1],
+        "cpu_seconds": time.process_time() - start,
+        "paired_parameters": "unchanged outside the existing initial U3 layer",
+    })
+    return record, {**arrays, "theta": theta}
 
 
 def prepare_initialization(

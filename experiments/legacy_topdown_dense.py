@@ -43,6 +43,8 @@ from mqt.yaqs.optimization import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from mqt.yaqs.optimization.backends import PreparationBackend
     from mqt.yaqs.optimization.gate_noise import GateNoiseContext
 
@@ -178,9 +180,20 @@ def train(
     compress_no_jump: bool = False,
     record_noise_banks: bool = False,
     require_jump_coverage: bool = False,
+    checkpoint: Callable[[int, np.ndarray, float], None] | None = None,
     engine: PreparationBackend | None = None,
 ) -> tuple[np.ndarray, dict]:
-    """Run archived batch or explicitly specified hybrid vector updates."""
+    """Run archived updates, optionally recording the initial state and every iterate.
+
+    The checkpoint callback receives a private parameter copy and its fidelity.
+    No selection or change to the update trajectory occurs inside this function.
+
+    Raises:
+        ValueError: If checkpoints are requested with changing training banks.
+    """
+    if checkpoint is not None and noisy and not crn:
+        msg = "Iterate checkpoints require a fixed training bank for comparable fidelities."
+        raise ValueError(msg)
     start = time.perf_counter()
     theta = theta.copy()
     if engine is None:
@@ -233,6 +246,8 @@ def train(
         return retained, weights
 
     maps, weights = sample(seed) if noisy and crn else (None, None)
+    if checkpoint is not None:
+        checkpoint(0, theta.copy(), float(engine.metrics(theta, maps, weights=weights)[1]))
     trace = []
     for iteration in range(1, steps + 1):
         if noisy and not crn:
@@ -247,6 +262,8 @@ def train(
             theta -= step * gradient
         fidelity = engine.metrics(theta, maps, weights=weights)[1]
         trace.append(fidelity)
+        if checkpoint is not None:
+            checkpoint(iteration, theta.copy(), float(fidelity))
         if fidelity >= stop:
             break
     return theta, {

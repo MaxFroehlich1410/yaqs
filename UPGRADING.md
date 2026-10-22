@@ -4,6 +4,21 @@ This document describes breaking changes and how to upgrade. For a complete list
 
 ## [Unreleased]
 
+### Native MPS scaling pilot
+
+`benchmarks.state_preparation.mps_targets` generates and authenticates random
+MPS targets directly as NPZ site tensors and a JSON manifest, including thirty
+qubits. The archived dense fixtures and supported-width constants are unchanged.
+This separate format uses a positive all-zero amplitude for global phase; its
+physical state matches the existing Gaussian-tensor random-MPS family up to phase.
+
+`experiments.topdown_native_mps` reuses product screening, preparation and B/G
+updates without dense target expansion. Its sealed propagation cutoff is
+`1e-8` for preparation, pruning replay and noisy refinement; target/input
+canonicalization retains machine epsilon. Final MPO assessment remains
+untruncated and reports its own diagnostics. This does not change earlier
+experiment defaults. See `experiments/topdown_native_mps.md` for execution.
+
 ### Source-only experiment checkout
 
 Generated experiment output, checkpoints, plots, and manuscript data and build

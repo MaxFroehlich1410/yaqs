@@ -21,7 +21,7 @@ import scipy
 from scipy.sparse.linalg import LinearOperator, eigsh
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Iterator, Sequence
 
     from numpy.typing import NDArray
 
@@ -220,6 +220,68 @@ def _tfim_ground_state(
     return state, float(eigenvalues[0]), couplings, fields
 
 
+class EvenTfimLinearOperator(LinearOperator):
+    """TFIM in the global-X-even sector, with no retained flip-index arrays."""
+
+    def __init__(self, num_qubits: int, h_over_j: float) -> None:
+        """Build the reduced diagonal with at most O(2**(n-1)) workspace."""
+        self.num_qubits = num_qubits
+        self.h_over_j = h_over_j
+        dim = 2 ** (num_qubits - 1)
+        indices = np.arange(dim, dtype=np.int64)
+        diagonal = np.zeros(dim, dtype=np.float64)
+        for site in range(num_qubits - 1):
+            unequal = ((indices >> site) ^ (indices >> (site + 1))) & 1
+            diagonal += 2 * unequal - 1
+        self.diagonal = diagonal
+        super().__init__(dtype=np.dtype(np.float64), shape=(dim, dim))
+
+    def _matvec(self, x: NDArray[np.float64]) -> NDArray[np.float64]:
+        vector = np.asarray(x).reshape(-1)
+        result = self.diagonal * vector
+        for site in range(self.num_qubits - 1):
+            width = 2**site
+            source = vector.reshape(-1, 2, width)
+            dest = result.reshape(-1, 2, width)
+            dest[:, 0, :] -= self.h_over_j * source[:, 1, :]
+            dest[:, 1, :] -= self.h_over_j * source[:, 0, :]
+        result -= self.h_over_j * vector[::-1]
+        return result
+
+
+def _tfim_ground_state_even(
+    num_qubits: int, spec: TfimSpec
+) -> tuple[NDArray[np.complex128], float, NDArray[np.float64], NDArray[np.float64]]:
+    """Solve the TFIM ground state in its exact global-X-even symmetry sector.
+
+    The reduced basis is (|k> + |complement(k)>)/sqrt(2), with the most
+    significant bit of k zero. This selects the finite-chain symmetric ground
+    state even when the ferromagnetic even/odd splitting is very small.
+
+    Returns:
+        Full little-endian state, ground energy, couplings, and fields.
+
+    Raises:
+        ValueError: If the computed eigenpair fails its residual check.
+    """
+    operator = EvenTfimLinearOperator(num_qubits, spec.h_over_j)
+    rng = np.random.default_rng(spec.seed + 10_000 * num_qubits)
+    initial = rng.standard_normal(operator.shape[0])
+    initial /= np.linalg.norm(initial)
+    energies, vectors = eigsh(operator, k=1, which="SA", v0=initial, tol=1e-13, ncv=12, maxiter=20_000)
+    reduced = vectors[:, 0]
+    residual = float(np.linalg.norm(operator @ reduced - energies[0] * reduced))
+    if residual > 1e-9:
+        msg = f"TFIM ground-state residual {residual} exceeds 1e-9."
+        raise ValueError(msg)
+    state = np.empty(2**num_qubits, dtype=np.complex128)
+    half = reduced.size
+    state[:half] = reduced / np.sqrt(2.0)
+    state[half:] = state[:half][::-1]
+    couplings, fields = _tfim_parameters(num_qubits, spec)
+    return _normalize_and_fix_global_phase(state), float(energies[0]), couplings, fields
+
+
 def _dense_haar_random_state(num_qubits: int, seed: int) -> NDArray[np.complex128]:
     """Return a normalized dense complex Gaussian random state."""
     rng = np.random.default_rng(seed)
@@ -276,93 +338,129 @@ def json_vector_to_state(vector: Sequence[Sequence[float]]) -> NDArray[np.comple
     return np.asarray([complex(pair[0], pair[1]) for pair in vector], dtype=np.complex128)
 
 
+def iter_target_arrays(
+    num_qubits: Sequence[int] = QUBIT_COUNTS,
+    *,
+    target_ids: Sequence[str] = TARGET_IDS,
+    scalable_tfim: bool = False,
+) -> Iterator[tuple[dict[str, object], NDArray[np.complex128]]]:
+    """Yield target metadata and one dense array at a time.
+
+    Args:
+        num_qubits: Chain lengths to generate.
+        target_ids: Target identifiers to generate in benchmark order.
+        scalable_tfim: Use the memory-bounded even-parity TFIM solver.
+
+    Yields:
+        Generation metadata and the corresponding normalized state vector.
+    """
+    for n_qubits in num_qubits:
+        if "gaussian_mu0p5_sigma0p1" in target_ids:
+            gaussian = _gaussian_state(n_qubits)
+            yield (
+                {
+                    "target_id": "gaussian_mu0p5_sigma0p1",
+                    "num_qubits": n_qubits,
+                    "seed": None,
+                    "parameters": {
+                        "amplitude_encoding": "psi(x) = sqrt(f(x))",
+                        "distribution": "normal",
+                        "grid": "quantics endpoint-excluded grid on [0, 1): x=sum_{i=1}^N s_i*2**(-i)",
+                        "mean": GAUSSIAN_MEAN,
+                        "quantics_bit_order": "qubit 0 is s_1 and has weight 2**(-1); qubit i has weight 2**(-(i+1))",
+                        "source": "arXiv:2602.12042 Section 3.2.1 Probability distributions",
+                        "standard_deviation": GAUSSIAN_STANDARD_DEVIATION,
+                        "support_interval": "[0, 1)",
+                    },
+                    "norm": float(np.linalg.norm(gaussian)),
+                },
+                gaussian,
+            )
+
+        for spec in TFIM_SPECS:
+            if spec.target_id not in target_ids:
+                continue
+            state, energy, couplings, fields = (
+                _tfim_ground_state_even(n_qubits, spec) if scalable_tfim else _tfim_ground_state(n_qubits, spec)
+            )
+            yield (
+                {
+                    "target_id": spec.target_id,
+                    "num_qubits": n_qubits,
+                    "seed": None,
+                    "parameters": {
+                        "boundary_conditions": "open",
+                        "eigensolver_initial_vector_seed": spec.seed + 10_000 * n_qubits,
+                        "finite_size_note": "h/J=1 is the thermodynamic critical point; "
+                        "this record stores the finite-size open-chain ground state",
+                        "ground_energy": float(energy),
+                        "h_over_j": spec.h_over_j,
+                        "hamiltonian": "-J*sum_i Z_i Z_{i+1} - h*sum_i X_i",
+                        "j_coupling": 1.0,
+                        "j_couplings": [float(value) for value in couplings],
+                        "model": "uniform_1d_transverse_field_ising_model",
+                        "pauli_z_eigenvalue_convention": "Z|b_i> = (-1)**b_i |b_i>",
+                        "regime": spec.regime,
+                        "site_order": "site i is qubit i and bit i of the little-endian basis index",
+                        "transverse_field": spec.h_over_j,
+                        "transverse_fields": [float(value) for value in fields],
+                    },
+                    "norm": float(np.linalg.norm(state)),
+                },
+                state,
+            )
+
+        for spec in HAAR_RANDOM_SPECS:
+            if spec.target_id not in target_ids:
+                continue
+            state = _dense_haar_random_state(n_qubits, spec.seed)
+            yield (
+                {
+                    "target_id": spec.target_id,
+                    "num_qubits": n_qubits,
+                    "seed": spec.seed,
+                    "parameters": {
+                        "distribution": "independent standard normal real and imaginary parts",
+                        "random_generator": "numpy.random.default_rng",
+                    },
+                    "norm": float(np.linalg.norm(state)),
+                },
+                state,
+            )
+
+        for spec in RANDOM_MPS_SPECS:
+            if spec.target_id not in target_ids:
+                continue
+            state, bond_dimensions = _random_mps_state(n_qubits, spec.seed, spec.bond_dimension)
+            yield (
+                {
+                    "target_id": spec.target_id,
+                    "num_qubits": n_qubits,
+                    "seed": spec.seed,
+                    "parameters": {
+                        "bond_dimensions": list(bond_dimensions),
+                        "max_bond_dimension": spec.bond_dimension,
+                        "random_generator": "numpy.random.default_rng",
+                        "quimb_reference": (
+                            "qtn.MPS_rand_state(L=num_qubits, bond_dim=max_bond_dimension, normalize=True)"
+                        ),
+                        "tensor_distribution": "independent standard normal real entries",
+                    },
+                    "norm": float(np.linalg.norm(state)),
+                },
+                state,
+            )
+
+
 def generate_target_records(num_qubits: Sequence[int] = QUBIT_COUNTS) -> list[dict[str, object]]:
-    """Generate all target-state records for the requested qubit counts.
+    """Generate the legacy JSON target records without changing their convention.
 
     Returns:
         List of JSON-serializable target-state records.
     """
-    records: list[dict[str, object]] = []
-
-    for n_qubits in num_qubits:
-        gaussian = _gaussian_state(n_qubits)
-        records.append({
-            "target_id": "gaussian_mu0p5_sigma0p1",
-            "num_qubits": n_qubits,
-            "seed": None,
-            "parameters": {
-                "amplitude_encoding": "psi(x) = sqrt(f(x))",
-                "distribution": "normal",
-                "grid": "quantics endpoint-excluded grid on [0, 1): x=sum_{i=1}^N s_i*2**(-i)",
-                "mean": GAUSSIAN_MEAN,
-                "quantics_bit_order": "qubit 0 is s_1 and has weight 2**(-1); qubit i has weight 2**(-(i+1))",
-                "source": "arXiv:2602.12042 Section 3.2.1 Probability distributions",
-                "standard_deviation": GAUSSIAN_STANDARD_DEVIATION,
-                "support_interval": "[0, 1)",
-            },
-            "norm": float(np.linalg.norm(gaussian)),
-            "state_vector": _state_to_json_vector(gaussian),
-        })
-
-        for spec in TFIM_SPECS:
-            state, energy, couplings, fields = _tfim_ground_state(n_qubits, spec)
-            records.append({
-                "target_id": spec.target_id,
-                "num_qubits": n_qubits,
-                "seed": None,
-                "parameters": {
-                    "boundary_conditions": "open",
-                    "eigensolver_initial_vector_seed": spec.seed + 10_000 * n_qubits,
-                    "finite_size_note": "h/J=1 is the thermodynamic critical point; "
-                    "this record stores the finite-size open-chain ground state",
-                    "ground_energy": float(energy),
-                    "h_over_j": spec.h_over_j,
-                    "hamiltonian": "-J*sum_i Z_i Z_{i+1} - h*sum_i X_i",
-                    "j_coupling": 1.0,
-                    "j_couplings": [float(value) for value in couplings],
-                    "model": "uniform_1d_transverse_field_ising_model",
-                    "pauli_z_eigenvalue_convention": "Z|b_i> = (-1)**b_i |b_i>",
-                    "regime": spec.regime,
-                    "site_order": "site i is qubit i and bit i of the little-endian basis index",
-                    "transverse_field": spec.h_over_j,
-                    "transverse_fields": [float(value) for value in fields],
-                },
-                "norm": float(np.linalg.norm(state)),
-                "state_vector": _state_to_json_vector(state),
-            })
-
-        for spec in HAAR_RANDOM_SPECS:
-            state = _dense_haar_random_state(n_qubits, spec.seed)
-            records.append({
-                "target_id": spec.target_id,
-                "num_qubits": n_qubits,
-                "seed": spec.seed,
-                "parameters": {
-                    "distribution": "independent standard normal real and imaginary parts",
-                    "random_generator": "numpy.random.default_rng",
-                },
-                "norm": float(np.linalg.norm(state)),
-                "state_vector": _state_to_json_vector(state),
-            })
-
-        for spec in RANDOM_MPS_SPECS:
-            state, bond_dimensions = _random_mps_state(n_qubits, spec.seed, spec.bond_dimension)
-            records.append({
-                "target_id": spec.target_id,
-                "num_qubits": n_qubits,
-                "seed": spec.seed,
-                "parameters": {
-                    "bond_dimensions": list(bond_dimensions),
-                    "max_bond_dimension": spec.bond_dimension,
-                    "random_generator": "numpy.random.default_rng",
-                    "quimb_reference": "qtn.MPS_rand_state(L=num_qubits, bond_dim=max_bond_dimension, normalize=True)",
-                    "tensor_distribution": "independent standard normal real entries",
-                },
-                "norm": float(np.linalg.norm(state)),
-                "state_vector": _state_to_json_vector(state),
-            })
-
-    return records
+    return [
+        {**metadata, "state_vector": _state_to_json_vector(state)} for metadata, state in iter_target_arrays(num_qubits)
+    ]
 
 
 def generate_target_data(num_qubits: Sequence[int] = QUBIT_COUNTS) -> dict[str, object]:
@@ -509,7 +607,21 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="Return a non-zero exit code if the output file is missing or stale.",
     )
+    parser.add_argument("--binary", action="store_true", help="Generate/check binary targets instead of legacy JSON.")
+    parser.add_argument("--num-qubits", action="append", type=int, help="Binary target chain length; repeatable.")
+    parser.add_argument(
+        "--target-id", action="append", choices=TARGET_IDS, help="Binary target identifier; repeatable."
+    )
     args = parser.parse_args(argv)
+    if args.binary:
+        from benchmarks.state_preparation.binary_targets import (  # noqa: PLC0415 - avoids a generator/loader cycle.
+            binary_main,
+        )
+
+        output = None if args.output == DEFAULT_OUTPUT_PATH else args.output
+        return binary_main(output, args.num_qubits, args.target_id, check=args.check)
+    if args.num_qubits is not None or args.target_id is not None:
+        parser.error("--num-qubits and --target-id require --binary; the legacy fixture is frozen")
 
     payload = generate_target_data()
     if args.check:

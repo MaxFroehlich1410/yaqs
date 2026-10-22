@@ -13,6 +13,8 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Added
 
+- added tensor-only random MPS targets and product-state screening for a thirty-qubit pilot, reusing canonical propagation at a sealed relative cutoff of 1e-8 with machine-epsilon inputs and independent final MPO assessment ([**@MaxFroehlich1410**])
+
 - made overnight preparation tests independent of excluded historical run receipts ([**@MaxFroehlich1410**])
 
 - made the historical plot scripts portable and safe to import, with PNG smoke tests ([**@MaxFroehlich1410**])

@@ -9,21 +9,56 @@
 
 Uses multi-threaded LAPACK/OpenBLAS by default; the BLAS pool is *not* capped
 here. The wrapper retries with the more robust ``gesvd`` driver (and
-``check_finite=True``) when ``gesdd`` fails to converge on ill-conditioned
-inputs.
+``check_finite=True``) when ``gesdd`` fails or returns non-finite factors.
+Returned factors are checked even when input checking is disabled.
 """
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Literal, overload
 
+import numpy as np
 import scipy.linalg
 
 if TYPE_CHECKING:
-    import numpy as np
     from numpy.typing import NDArray
 
 LapackDriver = Literal["gesdd", "gesvd"]
+
+
+def _checked_svd(
+    a: NDArray[np.complex128],
+    *,
+    full_matrices: bool,
+    compute_uv: bool,
+    lapack_driver: LapackDriver,
+    check_finite: bool,
+) -> tuple[NDArray[np.complex128], NDArray[np.float64], NDArray[np.complex128]] | NDArray[np.float64]:
+    """Decompose and reject invalid output before it reaches another tensor kernel.
+
+    LAPACK can report success while returning non-finite singular vectors for
+    a finite, nearly rank-deficient matrix. Input validation alone cannot detect
+    this case, and zero singular values do not make NaN vectors harmless:
+    multiplying a NaN by zero still produces a NaN.
+
+    Returns:
+        Finite singular values and, when requested, finite singular vectors.
+
+    Raises:
+        scipy.linalg.LinAlgError: If LAPACK returns non-finite output without an error.
+    """
+    result = scipy.linalg.svd(
+        a,
+        full_matrices=full_matrices,
+        compute_uv=compute_uv,
+        lapack_driver=lapack_driver,
+        check_finite=check_finite,
+    )
+    factors = result if isinstance(result, tuple) else (result,)
+    if any(not np.all(np.isfinite(factor)) for factor in factors):
+        msg = f"SVD driver {lapack_driver} returned non-finite factors."
+        raise scipy.linalg.LinAlgError(msg)
+    return result
 
 
 @overload
@@ -59,7 +94,8 @@ def svd(
     """Singular value decomposition with automatic driver fallback.
 
     When ``lapack_driver`` is ``"gesdd"`` (default), retries with ``"gesvd"``
-    and ``check_finite=True`` on failure for ill-conditioned inputs.
+    and ``check_finite=True`` on failure or non-finite output. Finite output is
+    required from both drivers; an invalid fallback result raises an error.
 
     Mirrors :func:`scipy.linalg.svd` for the supported keyword arguments.
 
@@ -79,7 +115,7 @@ def svd(
         singular values ``s``.
     """
     if lapack_driver != "gesdd":
-        return scipy.linalg.svd(
+        return _checked_svd(
             a,
             full_matrices=full_matrices,
             compute_uv=compute_uv,
@@ -87,7 +123,7 @@ def svd(
             check_finite=check_finite,
         )
     try:
-        return scipy.linalg.svd(
+        return _checked_svd(
             a,
             full_matrices=full_matrices,
             compute_uv=compute_uv,
@@ -95,7 +131,7 @@ def svd(
             check_finite=check_finite,
         )
     except (scipy.linalg.LinAlgError, ValueError, FloatingPointError):
-        return scipy.linalg.svd(
+        return _checked_svd(
             a,
             full_matrices=full_matrices,
             compute_uv=compute_uv,

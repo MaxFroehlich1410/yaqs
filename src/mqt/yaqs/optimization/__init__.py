@@ -16,6 +16,7 @@ backend for state preparation with unitary noise trajectories.
 from __future__ import annotations
 
 from .backends import PreparationBackend, create_backend
+from .canonical_mps_backend import CanonicalMPSBackend
 from .gate_noise import (
     CompositeGateNoiseInstruction,
     GateNoiseContext,
@@ -94,6 +95,7 @@ __all__ = [
     "KROTOV_MAP_SAMPLING_POLICIES",
     "KROTOV_TRAJECTORY_RNG_ALGORITHM",
     "KROTOV_TRAJECTORY_SEED_DERIVATION_VERSION",
+    "CanonicalMPSBackend",
     "CompositeGateNoiseInstruction",
     "GateNoiseContext",
     "GateNoiseInstruction",

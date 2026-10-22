@@ -128,6 +128,41 @@ def test_split_two_site_reconstructs_full_rank(distr: str) -> None:
     np.testing.assert_allclose(merged_back, merged, atol=1e-10, rtol=1e-8)
 
 
+@pytest.mark.parametrize("distribution", ["left", "right", "sqrt"])
+def test_rank_deficient_split_recovers_corrupt_vectors(
+    monkeypatch: pytest.MonkeyPatch, distribution: SvdDistribution
+) -> None:
+    """Zero singular values must not allow NaN vectors to poison later MPS gates."""
+    matrix = np.diag([1.0, 1e-16, 0.0, 0.0]).astype(complex)
+    merged = matrix.reshape(2, 2, 2, 2).transpose(0, 2, 1, 3).reshape(4, 2, 2)
+    original = scipy.linalg.svd
+    calls = []
+
+    def corrupt_null_vectors(a: np.ndarray, **kwargs: object) -> tuple:
+        calls.append(kwargs["lapack_driver"])
+        u, singular, vh = original(a, **kwargs)
+        if kwargs["lapack_driver"] == "gesdd":
+            u[:, -1] = np.nan
+            vh[-1, :] = np.nan
+        return u, singular, vh
+
+    monkeypatch.setattr(scipy.linalg, "svd", corrupt_null_vectors)
+    left, right = split_two_site(
+        merged,
+        [2, 2],
+        svd_distribution=distribution,
+        trunc_mode="discarded_weight",
+        threshold=0,
+        max_bond_dim=None,
+        min_bond_dim=4,
+    )
+    assert calls == ["gesdd", "gesvd"]
+    assert left.shape[-1] == right.shape[1] == 4
+    assert np.all(np.isfinite(left))
+    assert np.all(np.isfinite(right))
+    np.testing.assert_allclose(merge_two_site(left, right), merged, atol=1e-30, rtol=1e-14)
+
+
 def test_split_two_site_truncates_to_max_bond_dim() -> None:
     """``max_bond_dim`` caps the bond dimension returned by ``split_two_site``."""
     svs = np.array([1.0, 0.9, 0.8, 0.7], dtype=np.float64)

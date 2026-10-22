@@ -1,0 +1,19 @@
+{
+  "description": "Finite two-site SVD input captured before any NaN was propagated in a 20-qubit ferromagnetic TFIM preparation.",
+  "shape": [256, 256],
+  "dtype": "<c16",
+  "fixture_sha256": "2d83dec2365ba281964a635dbc3554730475814364d501c7492538e3998156cb",
+  "source_npy_sha256": "35f46d21038e0ee6505377121287de80482c3f9683646db37ffad0e3e4ba3289",
+  "provenance": {
+    "target_id": "tfim_ferro",
+    "qubits": 20,
+    "seed": 300,
+    "depth": 4,
+    "online_sweep": 29,
+    "sites": [10, 11],
+    "scipy_version": "1.17.1",
+    "numpy_version": "2.4.6"
+  },
+  "observed_primary_failure": "gesdd returns finite singular values but non-finite singular vectors without raising, even with check_finite=True.",
+  "robust_relative_reconstruction_error": 4.4776905546452046e-15
+}
