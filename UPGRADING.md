@@ -6,6 +6,52 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
+### Manuscript reproduction
+
+The opt-in `paper_reproduction.py` pipeline derives all manuscript tables and
+figures from nine shared trajectories and adds four scalar fallback ablations.
+It preserves the original unscaled Hamiltonian and joint correction schedules.
+`paper_reproduction_dispatch.py` runs an exclusive shared-reference queue;
+preparation never launches simulations. See `PAPER_REPRODUCTION.md` in the
+`spin_conservation` benchmark folder. Existing result files are not overwritten.
+
+### Scalar conservation recovery and counters
+
+The paper's `spin_conservation` folder now includes `fallback_pilot.py`,
+`fallback_replay.py`, and `fallback_report.py`. See `FALLBACK_EXPERIMENT.md`
+there for the matched small-system grid and reproducible result format. Use
+`--models stress --width-per-site 1 --initial-chi 2` for the extended
+Hamiltonian grid with equal spectral bandwidth per site and initial tensors
+shared across evolution caps. These options are opt-in; legacy Hamiltonian
+scales and initial-state defaults remain available.
+
+The separate `fallback_accuracy.py` pipeline adds metadata-only planning,
+explicit event-time audits and execution, larger-system studies, and
+accuracy-qualified fallback rates. See `FALLBACK_ACCURACY.md` in the paper
+folder. No experiments run on import or without an explicit `audit` or `run`
+subcommand. `fallback_dispatch.py` adds explicit distributed preparation,
+low-priority Linux workers on shared storage, and result collection. Workers
+leave eight physical cores and at least 64 GiB available-memory headroom;
+interrupted claims require inspection before any manual requeue. Its manifests
+and reports are separate from the pilot format.
+
+Conservation-enabled scalar runs now attempt the manuscript's rank-preserving
+fallback when the original correction is rejected. Successful original scalar
+corrections are unchanged. Set `conserve_fallback=False` on `AnalogSimParams` to
+retain the previous skip-on-failure behavior. Coupled joint corrections retain
+their existing solver and do not use the scalar fallback.
+
+Inspect `result.conservation_stats.to_dict()` after a run for recovery attempts,
+successes by stage, and unresolved cases. Counts are totals over actual
+correction calls, including measurement copies, rather than physical timesteps.
+Ensemble counts are summed across workers. Program counts cover the entire
+program; segment result collectors are not populated separately. Each run starts
+fresh.
+
+The existing `restore_invariant_at_center` remains a single-direction kernel.
+Custom loops may call `restore_invariant` for recovery and wrap the loop in
+`track_conservation()` to collect the same counters.
+
 ### BUG compression now occurs after each half-sweep
 
 Alternating-endpoint BUG evolution now compresses and optionally normalizes the

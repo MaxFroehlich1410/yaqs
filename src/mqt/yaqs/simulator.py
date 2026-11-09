@@ -124,6 +124,7 @@ from .core.data_structures.simulation_program import (
     stitch_program_results,
 )
 from .core.data_structures.state import State
+from .core.methods.conservation_tracking import ConservationStats, track_conservation
 from .core.parallel_utils import (
     WORKER_CTX,
     ExecutionConfig,
@@ -181,6 +182,19 @@ def _analog_worker(traj_idx: int) -> tuple[NDArray[np.float64], NDArray[np.float
         WORKER_CTX["sim_params"],
         WORKER_CTX["operator"],
     ))
+
+
+def _tracked_analog_worker(
+    traj_idx: int,
+) -> tuple[tuple[NDArray[np.float64], NDArray[np.float64] | None, MPS | None], ConservationStats]:
+    """Execute an analog worker and return its process-local conservation counts.
+
+    Returns:
+        Original worker payload and counters.
+    """
+    with track_conservation() as stats:
+        payload = _analog_worker(traj_idx)
+    return payload, stats
 
 
 def _mcwf_worker(traj_idx: int) -> tuple[NDArray[np.float64], None, np.ndarray | None]:
@@ -551,6 +565,19 @@ def _program_worker(traj_idx: int, payload: dict[str, Any] | None = None) -> _Pr
     )
 
 
+def _tracked_program_worker(
+    traj_idx: int, payload: dict[str, Any] | None = None
+) -> tuple[_ProgramTrajectory, ConservationStats]:
+    """Execute a program worker and return its conservation counts.
+
+    Returns:
+        Original worker payload and counters for the complete program trajectory.
+    """
+    with track_conservation() as stats:
+        result = _program_worker(traj_idx, payload)
+    return result, stats
+
+
 def _ensemble_worker(
     job_idx: int,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.complex128] | None]:
@@ -571,6 +598,19 @@ def _ensemble_worker(
         WORKER_CTX["sim_params"],
         WORKER_CTX["operator"],
     ))
+
+
+def _tracked_ensemble_worker(
+    job_idx: int,
+) -> tuple[tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.complex128] | None], ConservationStats]:
+    """Execute an ensemble worker and return its conservation counts.
+
+    Returns:
+        Original worker payload and counters for this member.
+    """
+    with track_conservation() as stats:
+        payload = _ensemble_worker(job_idx)
+    return payload, stats
 
 
 def _materialized_mps(state: State) -> MPS | None:
@@ -1132,9 +1172,12 @@ class Simulator:
             "effective_num_traj": effective_num_traj,
         }
         final_mps: MPS | None = None
+        conservation_stats = ConservationStats()
 
-        def consume(traj_index: int, trajectory: _ProgramTrajectory) -> None:
+        def consume(traj_index: int, tracked: tuple[_ProgramTrajectory, ConservationStats]) -> None:
             nonlocal final_mps
+            trajectory, stats = tracked
+            conservation_stats.merge(stats)
             segment_payloads, trajectory_final = trajectory
             for instruction, segment_result, diag_per_traj, segment_payload in zip(
                 compiled.instructions,
@@ -1162,7 +1205,7 @@ class Simulator:
 
         if self.parallel and effective_num_traj > 1:
             for traj_index, trajectory in run_backend_parallel(
-                worker_fn=_program_worker,
+                worker_fn=_tracked_program_worker,
                 payload=payload,
                 n_jobs=effective_num_traj,
                 max_workers=self.max_workers,
@@ -1182,7 +1225,7 @@ class Simulator:
             )
             for traj_index in iterator:
                 trajectory = call_serial_capped(
-                    _program_worker,
+                    _tracked_program_worker,
                     traj_index,
                     payload,
                     n_threads=available_cpus(),
@@ -1201,6 +1244,7 @@ class Simulator:
 
         expectation_values, times, counts = stitch_program_results(segment_results, compiled.observables)
         result = Result(
+            conservation_stats=conservation_stats,
             observables=[copy.deepcopy(obs) for obs in compiled.observables],
             expectation_values=expectation_values,
             times=times,
@@ -1351,7 +1395,7 @@ class Simulator:
                 "operator": mpo_op,
                 "backend": backend,
             }
-            worker_fn = _analog_worker
+            worker_fn = _tracked_analog_worker
 
         final_mps: MPS | None = None
         final_psi: np.ndarray | None = None
@@ -1369,7 +1413,15 @@ class Simulator:
                 retry_exceptions=self.retry_exceptions,
                 mp_context=self.mp_context,
             ):
-                traj_data, traj_diag, traj_final = traj_payload
+                if state_rep == "mps":
+                    worker_payload, stats = cast(
+                        "tuple[tuple[NDArray[np.float64], NDArray[np.float64] | None, MPS | None], ConservationStats]",
+                        traj_payload,
+                    )
+                    result.conservation_stats.merge(stats)
+                else:
+                    worker_payload = cast("tuple[NDArray[np.float64], Any, Any]", traj_payload)
+                traj_data, traj_diag, traj_final = worker_payload
                 _store_observable_trajectory(result, sim_params, traj_index=i, sorted_traj_data=traj_data)
                 if traj_diag is not None and diag_per_traj is not None:
                     diag_per_traj[:, i, :] = traj_diag
@@ -1394,7 +1446,9 @@ class Simulator:
             iterator = tqdm(args, desc="Running trajectories", ncols=80, disable=not self.show_progress)
 
             for i, arg in enumerate(iterator):
-                traj_data, traj_diag, traj_final = call_serial_capped(backend, arg, n_threads=n_threads)
+                with track_conservation() as stats:
+                    traj_data, traj_diag, traj_final = call_serial_capped(backend, arg, n_threads=n_threads)
+                result.conservation_stats.merge(stats)
                 _store_observable_trajectory(result, sim_params, traj_index=i, sorted_traj_data=traj_data)
                 if traj_diag is not None and diag_per_traj is not None:
                     diag_per_traj[:, i, :] = traj_diag
@@ -1692,8 +1746,8 @@ class Simulator:
         }
 
         if self.parallel and len(initial_states) > 1:
-            for i, (obs_result, traj_diag, multi_time_result) in run_backend_parallel(
-                worker_fn=_ensemble_worker,
+            for i, (member_payload, stats) in run_backend_parallel(
+                worker_fn=_tracked_ensemble_worker,
                 payload=payload,
                 n_jobs=len(initial_states),
                 max_workers=self.max_workers,
@@ -1703,6 +1757,8 @@ class Simulator:
                 retry_exceptions=self.retry_exceptions,
                 mp_context=self.mp_context,
             ):
+                obs_result, traj_diag, multi_time_result = member_payload
+                result.conservation_stats.merge(stats)
                 _store_observable_trajectory(result, sim_params, traj_index=i, sorted_traj_data=obs_result)
                 diag_per_traj[:, i, :] = traj_diag
                 if multi_time_matrix is not None:
@@ -1713,9 +1769,11 @@ class Simulator:
             args = [(i, initial_states[i], worker_params, operator) for i in range(len(initial_states))]
             iterator = tqdm(args, desc="Running unitary ensemble", ncols=80, disable=not self.show_progress)
             for i, arg in enumerate(iterator):
-                obs_result, traj_diag, multi_time_result = call_serial_capped(
-                    ensemble_member_worker, arg, n_threads=n_threads
-                )
+                with track_conservation() as stats:
+                    obs_result, traj_diag, multi_time_result = call_serial_capped(
+                        ensemble_member_worker, arg, n_threads=n_threads
+                    )
+                result.conservation_stats.merge(stats)
                 _store_observable_trajectory(result, sim_params, traj_index=i, sorted_traj_data=obs_result)
                 diag_per_traj[:, i, :] = traj_diag
                 if multi_time_matrix is not None:

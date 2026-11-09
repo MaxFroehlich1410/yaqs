@@ -40,6 +40,7 @@ if str(HERE) not in sys.path:
 import fixtures_n as fx  # ruff:ignore[module-import-not-at-top-of-file]
 import l16_joint_table as jt  # ruff:ignore[module-import-not-at-top-of-file]
 
+from mqt.yaqs import track_conservation
 from mqt.yaqs.analog.analog_tjm import capture_conservation_target  # ruff:ignore[module-import-not-at-top-of-file]
 from mqt.yaqs.analog.evolution import apply_unitary_evolution  # ruff:ignore[module-import-not-at-top-of-file]
 
@@ -215,8 +216,9 @@ def main() -> int:
         jt.install_correction(args.sweep)
         started = time.perf_counter()
         try:
-            for _ in range(steps):
-                apply_unitary_evolution(state, hamiltonian, params, conservation_target=target)
+            with track_conservation() as conservation_stats:
+                for _ in range(steps):
+                    apply_unitary_evolution(state, hamiltonian, params, conservation_target=target)
         finally:
             jt.install_correction("none")
         wall = time.perf_counter() - started
@@ -231,6 +233,7 @@ def main() -> int:
             "cap": args.cap,
             "integrator": args.integrator,
             "solves": jt.SOLVES["n"],
+            "conservation_stats": conservation_stats.to_dict(),
             "wall_seconds": wall,
             "infidelity": jt.infidelity(reference, vector),
             "pinned_error": {
@@ -261,6 +264,12 @@ def main() -> int:
         print(
             f"  {variant:8s} sweep={args.sweep:5s} I={record['infidelity']:.4e} "
             f"solves={record['solves']:5d}  {summary}  ({wall:.0f}s)",
+            flush=True,
+        )
+
+        print(
+            f"  fallback: {conservation_stats.fallback_successes}/{conservation_stats.fallback_attempts} recovered; "
+            f"{conservation_stats.fallback_failures} unresolved",
             flush=True,
         )
 

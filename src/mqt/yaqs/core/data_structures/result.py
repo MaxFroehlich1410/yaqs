@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 
+from ..methods.conservation_tracking import ConservationStats
 from .simulation_parameters import AnalogSimParams, DigitalSimParams, Observable
 
 if TYPE_CHECKING:
@@ -161,7 +162,8 @@ class Result:
     :class:`~mqt.yaqs.SimulationProgram`, the outer result uses ``sim_params=None``
     and exposes stitched :attr:`expectation_values`, :attr:`times`, and
     :attr:`counts` like a normal run; :attr:`segment_results` retains per-segment
-    detail. :attr:`observables` preserves the user-supplied ordering;
+    detail. :attr:`conservation_stats` reports recovery counts summed over all
+    executed trajectories (including measurement copies). :attr:`observables` preserves the user-supplied ordering;
     :attr:`expectation_values` and :attr:`trajectories` hold the corresponding
     data in lock-step by index. For MPS-backed runs with observables,
     :attr:`runtime_cost`, :attr:`max_bond`, and :attr:`total_bond` are populated
@@ -187,3 +189,4 @@ class Result:
     segment_index: int | None = None
     segment_type: Literal["analog", "digital"] | None = None
     time_offset: float | None = None
+    conservation_stats: ConservationStats = field(default_factory=ConservationStats)

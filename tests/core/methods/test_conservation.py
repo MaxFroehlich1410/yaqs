@@ -581,7 +581,7 @@ def test_capture_target_matches_the_initial_expectation_value() -> None:
     mpo = MPO.ising(3, 1.0, 0.5)
     params = sim_params(conserve_energy=True, max_bond_dim=2)
     captured = capture_conservation_target(state, mpo, None, params)
-    assert captured is not None
+    assert isinstance(captured, EnergyTarget)
     assert captured.value == pytest.approx(expectation_value(state, mpo), rel=1e-14)
 
 
@@ -592,7 +592,7 @@ def test_capture_target_serves_either_evolution_mode(evolution_mode: EvolutionMo
     mpo = MPO.ising(3, 1.0, 0.5)
     params = sim_params(conserve_energy=True, max_bond_dim=2, evolution_mode=evolution_mode)
     captured = capture_conservation_target(state, mpo, None, params)
-    assert captured is not None
+    assert isinstance(captured, EnergyTarget)
     assert captured.value == pytest.approx(expectation_value(state, mpo), rel=1e-14)
     assert captured.tol == params.conserve_tol
 

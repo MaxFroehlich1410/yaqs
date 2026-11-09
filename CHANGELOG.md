@@ -14,6 +14,22 @@ releases may include breaking changes.
 
 <!-- TODO: add the pull request reference to the entry below once the PR is opened. -->
 
+- added a deduplicated manuscript reproduction pipeline with shared references,
+  scalar fallback ablations, joint-schedule diagnostics, figure/table
+  generation, and an exclusive shared-server queue ([**@MaxFroehlich1410**])
+- added a distributed accuracy-study queue with isolated single-trajectory
+  workers, resource headroom, progress records, and matched result assembly
+  ([**@MaxFroehlich1410**])
+- added an opt-in accuracy-controlled fallback study with event-time audits,
+  larger-bond and timestep checks, dimer quenches, streamed full-state
+  references, and accuracy-qualified fallback rates ([**@MaxFroehlich1410**])
+- added a reproducible small-system fallback experiment with matched
+  trajectories, event snapshots, replay checks, and frequency and accuracy
+  reports, including a normalized 17-setting Hamiltonian stress grid and fixed
+  seeded initial states across bond caps ([**@MaxFroehlich1410**])
+- added rank-preserving scalar conservation recovery and per-run fallback
+  counters (`Result.conservation_stats`, `track_conservation`), including
+  parallel ensemble aggregation ([**@MaxFroehlich1410**])
 - added an opt-in post-compression correction that restores conserved quantities
   for BUG and TDVP (`conserve_energy`, `conserve_observables`, `conserve_joint`,
   `conserve_tol`), restoring `<H>` and any Hermitian observables commuting with
@@ -345,3 +361,5 @@ for previous changelogs._
 [Keep a Changelog]: https://keepachangelog.com/en/1.1.0/
 [Common Changelog]: https://common-changelog.org
 [Semantic Versioning]: https://semver.org/spec/v2.0.0.html
+
+[**@MaxFroehlich1410**]: https://github.com/MaxFroehlich1410

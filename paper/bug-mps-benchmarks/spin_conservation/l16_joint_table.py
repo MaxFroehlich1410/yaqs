@@ -42,6 +42,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from scipy.sparse.linalg import expm_multiply
 
+from mqt.yaqs import track_conservation
 from mqt.yaqs.core.data_structures.simulation_parameters import (
     AnalogSimParams,
     EvolutionMode,
@@ -298,8 +299,9 @@ def main() -> int:
                 # corrects inside the step after each of its two compressions, 2-TDVP after
                 # the completed sweep at the site-0 centre it leaves.
                 try:
-                    for _ in range(steps):
-                        apply_unitary_evolution(state, hamiltonian, params, conservation_target=target)
+                    with track_conservation() as conservation_stats:
+                        for _ in range(steps):
+                            apply_unitary_evolution(state, hamiltonian, params, conservation_target=target)
                 finally:
                     _bug.apply_conservation = _stock_correction
                     _evolution.apply_conservation = _stock_correction
@@ -316,6 +318,7 @@ def main() -> int:
                     "infidelity": infidelity(reference, state.to_vec()),
                     "max_bond": int(max(state.bond_dimensions())),
                     "solves": SOLVES["n"],
+                    "conservation_stats": conservation_stats.to_dict(),
                     "wall_seconds": time.perf_counter() - started,
                 }
                 payload["arms"].append(arm)
@@ -328,6 +331,9 @@ def main() -> int:
                     f"  solves={arm['solves']}  ({arm['wall_seconds']:.0f}s)",
                     flush=True,
                 )
+                print(f"  fallback: {conservation_stats.fallback_successes}/{conservation_stats.fallback_attempts} recovered; "
+                      f"{conservation_stats.fallback_failures} unresolved", flush=True)
+
     print(f"\n{len(payload['arms'])} arms in {args.output}")
     return 0
 

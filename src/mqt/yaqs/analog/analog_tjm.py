@@ -69,10 +69,14 @@ def capture_conservation_target(
     if not sim_params.conserve_energy and not extra:
         return None
     if not extra:
-        return EnergyTarget(expectation_value(state, hamiltonian), sim_params.conserve_tol)
+        return EnergyTarget(
+            expectation_value(state, hamiltonian), sim_params.conserve_tol, sim_params.conserve_fallback
+        )
     names = (["H"] if sim_params.conserve_energy else []) + list(extra.keys())
     mpos = ([hamiltonian] if sim_params.conserve_energy else []) + list(extra.values())
-    return record_conservation_targets(state, names, mpos, tol=sim_params.conserve_tol, joint=sim_params.conserve_joint)
+    return record_conservation_targets(
+        state, names, mpos, tol=sim_params.conserve_tol, joint=sim_params.conserve_joint
+    )._replace(fallback=sim_params.conserve_fallback)
 
 
 def initialize(

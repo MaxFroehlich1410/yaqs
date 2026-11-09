@@ -284,6 +284,83 @@ within `conserve_tol * max(1, |target|)` of its target, so a step that truncates
 nothing is left unchanged. The default of `1e-13` is close to the round-off of
 the expectation value itself.
 
+When a scalar correction fails, `conserve_fallback=True` (the default) enables
+the recovery described in Section III.B of the conservation manuscript:
+
+1. Move the center by exact QR transformations and try the scalar correction at
+   each other site, stopping at the first success.
+2. Return to the original compression frame, check spectral feasibility, and
+   scan onward only if that frame is infeasible. At the first feasible frame,
+   solve the minimum-displacement constraint using a scalar secular equation and
+   shifted matrix-free solves. This constrained solve is attempted at most once
+   per fallback invocation.
+
+Every successful recovery returns to the entry center without changing bond
+sizes. Failed recovery restores the entry tensors and gauge exactly. Set
+`conserve_fallback=False` to reproduce the original skip-on-failure behavior.
+`restore_invariant_at_center` remains the original one-direction kernel;
+`restore_invariant` is its counterpart with recovery.
+
+The fallback is for **one constraint**. It also applies to the individual scalar
+solves selected by `conserve_joint=False`. It does not replace a failed coupled
+joint solve with a sequence of scalar corrections, which would disturb the other
+targets. Joint failures are counted separately.
+
+### Inspecting recovery after a run
+
+Every `Simulator.run` result has independent counters, including runs with
+`get_state=False`. Counts are summed over ensemble members and survive parallel
+worker execution; program results report the total over the whole program.
+
+```python
+result = simulator.run(initial_state, hamiltonian, params)
+counts = result.conservation_stats
+print("Fallback invoked:", counts.fallback_attempts)
+print("Recovered by center scan:", counts.scan_successes)
+print("Recovered by full-frame solve:", counts.frame_successes)
+print("Unresolved:", counts.fallback_failures)
+print(counts.to_dict())  # JSON-ready report, including failure reasons
+```
+
+The three `paper/bug-mps-benchmarks/spin_conservation/l16_*.py` runners also
+print a recovery summary for each arm and save `conservation_stats` in its JSON
+record. Use a fresh output path when rerunning old experiments: resumed arms are
+skipped and cannot acquire counters retroactively.
+
+These are **correction-call counts**, not timestep counts. BUG normally calls
+correction twice per physical step and TDVP once. Measurement-copy evolution
+also contributes, if used by the selected trajectory scheme. `scan_sites` and
+`frames_checked` record the work within recovery, while `frame_attempts` counts
+constrained solves. `infeasible` means all checked frames excluded the target;
+`solver_failures` means numerical convergence or residual verification failed;
+`gauge_failures` means a QR move could not retain the existing bond sizes.
+`joint_unresolved` records coupled calls with a residual above tolerance.
+
+At a spectral boundary the least-displacing feasible tensor is the projection of
+the center into the extremal eigenspace. If that projection is zero, the
+manuscript's minimization over **nonzero** tensors has an unattained infimum.
+The implementation retains the compressed state and increments `no_minimizer`;
+it does not report this as spectral infeasibility. The current MPS
+representation has no symmetry-sector restriction; the whole one-site frame is
+admissible.
+
+To track a custom integration loop, use a run-local scope:
+
+```python
+from mqt.yaqs import track_conservation
+
+with track_conservation() as counts:
+    for _ in range(n_steps):
+        apply_unitary_evolution(state, mpo, params, conservation_target=target)
+print(counts.to_dict())
+```
+
+A successful fast scalar correction incurs no eigensolve. Spectral and shifted
+solves are used only in recovery; large frames remain matrix-free. Frames of at
+most three entries use a tiny dense spectral calculation because SciPy's complex
+ARPACK path cannot resolve those sizes. Accepted results are checked against the
+requested constraint with a floor of 64 machine epsilons.
+
 Both `EvolutionMode.BUG` and `EvolutionMode.TDVP` are supported. The corrections
 require a time-independent Hermitian Hamiltonian and no noise model: no
 expectation value is conserved along a noisy trajectory, so there is no initial
@@ -294,9 +371,11 @@ Two further properties are worth knowing before enabling this:
 
 - **Restoring an invariant does not reduce the error.** The displacement is
   orthogonal to the compression error, so it moves the state further from the
-  uncompressed one, never closer. What it buys is that the computed trajectory
-  keeps solving the equation you asked for, which is a different thing from
-  being closer to its solution.
+  uncompressed one, never closer, when applied at the compression center. A
+  fallback at another center retains the rank but no longer has this
+  orthogonality guarantee. What it buys is that the computed trajectory keeps
+  solving the equation you asked for, which is a different thing from being
+  closer to its solution.
 - **Only invariants of the low-rank dynamics can be restored.** The energy
   qualifies, and so does any sum of on-site operators, which covers the abelian
   charges such as a total magnetization or a particle number. A conserved

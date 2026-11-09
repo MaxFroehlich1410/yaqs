@@ -31,6 +31,7 @@ from .core.data_structures.simulation_parameters import (
 )
 from .core.data_structures.simulation_program import SimulationProgram
 from .core.data_structures.state import State
+from .core.methods.conservation_tracking import ConservationStats, track_conservation
 from .equivalence_checker import EquivalenceChecker
 from .memory_characterizer import MemoryCharacterizer
 from .noise_characterizer import NoiseCharacterizer
@@ -41,6 +42,7 @@ __all__ = [
     "MPS",
     "SIMULATION_PRESETS",
     "AnalogSimParams",
+    "ConservationStats",
     "DigitalSimParams",
     "EquivalenceChecker",
     "EvolutionMode",
@@ -55,5 +57,6 @@ __all__ = [
     "State",
     "__version__",
     "simulator",
+    "track_conservation",
     "version_info",
 ]

@@ -50,10 +50,12 @@ discarded, and restoring it pins a value the dynamics does not maintain.
 from __future__ import annotations
 
 import math
-from typing import TYPE_CHECKING, NamedTuple
+from typing import TYPE_CHECKING, Literal, NamedTuple
 
 import numpy as np
 
+from .conservation_fallback import minimum_displacement, prepare_frame
+from .conservation_tracking import ConservationStats, current_conservation_stats
 from .tdvp.primitives import project_site, update_left_environment, update_right_environment
 
 if TYPE_CHECKING:
@@ -71,6 +73,7 @@ __all__ = [
     "apply_conservation",
     "expectation_value",
     "record_conservation_targets",
+    "restore_invariant",
     "restore_invariant_at_center",
     "restore_invariants_joint",
     "validate_conservation",
@@ -92,10 +95,12 @@ class EnergyTarget(NamedTuple):
         value: Normalized ``<H>`` of the initial state, restored after each compression.
         tol: Relative tolerance, from ``AnalogSimParams.conserve_tol``. The correction is
             skipped while ``<H>`` is within ``tol * max(1, |value|)`` of ``value``.
+        fallback: Enable the two-stage recovery after a rejected scalar direction.
     """
 
     value: float
     tol: float
+    fallback: bool = True
 
 
 class ConservationTargets(NamedTuple):
@@ -111,6 +116,7 @@ class ConservationTargets(NamedTuple):
         values: Normalized expectation values of the initial state, restored after each
             compression.
         tol: Relative tolerance, as in :class:`EnergyTarget`.
+        fallback: Enable the two-stage recovery for scalar target sets.
         joint: Whether two or more observables are solved for together. ``False`` applies one
             scalar solve per observable in order, each of which perturbs the ones before it,
             and is provided to measure that difference.
@@ -121,6 +127,7 @@ class ConservationTargets(NamedTuple):
     values: tuple[float, ...]
     tol: float
     joint: bool = True
+    fallback: bool = True
 
     def reflected(self) -> ConservationTargets:
         """Return the same targets with every observable reflected.
@@ -309,6 +316,17 @@ def restore_invariant_at_center(state: MPS, mpo: MPO, target: float, *, tol: flo
         Whether the center tensor was displaced. ``False`` covers the skip cases:
         ``<O>`` is already at ``target`` within ``tol``, the center is an eigenvector of
         the effective operator, or the level set does not meet the line ``{C + mu g}``.
+    """
+    return _try_center_correction(state, mpo, target, tol=tol) == "corrected"
+
+
+def _try_center_correction(
+    state: MPS, mpo: MPO, target: float, *, tol: float
+) -> Literal["corrected", "satisfied", "rejected"]:
+    """Distinguish an already satisfied constraint from a failed scalar direction.
+
+    Returns:
+        Outcome of Algorithm 1 before optional normalization.
 
     Raises:
         ValueError: If the site counts differ or the gauge is unknown.
@@ -324,19 +342,19 @@ def restore_invariant_at_center(state: MPS, mpo: MPO, target: float, *, tol: flo
     center_tensor = state.tensors[center]
     norm_squared = float(np.vdot(center_tensor, center_tensor).real)
     if norm_squared < _ZERO_NORM_SQUARED:
-        return False
+        return "rejected"
 
     apply = _center_operator(state, mpo, center)
 
     projected = apply(center_tensor)
     quotient = float(np.vdot(center_tensor, projected).real) / norm_squared
-    if abs(quotient - target) < tol * max(1.0, abs(target)):
-        return False
+    if quotient == target or abs(quotient - target) < tol * max(1.0, abs(target)):
+        return "satisfied"
 
     gradient = projected - quotient * center_tensor
     gradient_squared = float(np.vdot(gradient, gradient).real)
     if gradient_squared < _ZERO_GRADIENT_SQUARED:
-        return False
+        return "rejected"
 
     curvature = float(np.vdot(gradient, apply(gradient)).real)
     multiplier = _solve_min_modulus_root(
@@ -344,11 +362,141 @@ def restore_invariant_at_center(state: MPS, mpo: MPO, target: float, *, tol: flo
         2.0 * gradient_squared,
         norm_squared * (quotient - target),
     )
-    if multiplier is None:
-        return False
+    if multiplier is None or not np.isfinite(multiplier):
+        return "rejected"
 
     state.tensors[center] = np.asarray(center_tensor + multiplier * gradient, dtype=np.complex128)
+    return "corrected"
+
+
+def _move_center(state: MPS, destination: int) -> bool:
+    """Shift by exact QR only when the existing tensor dimensions permit it.
+
+    Returns:
+        Whether the requested gauge was reached without changing bond sizes.
+    """
+    center = state.orthogonality_center
+    assert center is not None
+    while center != destination:
+        physical, left, right = state.tensors[center].shape
+        if center < destination:
+            if right > physical * left:
+                return False
+            state.shift_orthogonality_center_right(center)
+            center += 1
+        else:
+            if left > physical * right:
+                return False
+            state.shift_orthogonality_center_left(center)
+            center -= 1
     return True
+
+
+def restore_invariant(state: MPS, mpo: MPO, target: float, *, tol: float, fallback: bool = True) -> bool:
+    """Restore one invariant with the manuscript's two-stage failure recovery.
+
+    First try Algorithm 1 at the current center and then at the other centers.
+    If all directions fail, return to the original frame and solve the
+    minimum-displacement problem at the first spectrally feasible center, at
+    most once. Return the center to its entry site for the integrator. Failed
+    recovery restores the original tensors exactly, including their gauge.
+
+    Args:
+        state: Canonical MPS, modified in place only on successful restoration.
+        mpo: Hermitian observable in the state's current orientation.
+        target: Requested normalized expectation value.
+        tol: Relative constraint tolerance.
+        fallback: Enable recovery after a rejected scalar direction.
+
+    Returns:
+        Whether the physical state was displaced.
+    """
+    stats = current_conservation_stats()
+    if stats is None:
+        stats = ConservationStats()
+    stats.scalar_calls += 1
+    outcome = _try_center_correction(state, mpo, target, tol=tol)
+    if outcome == "corrected":
+        stats.scalar_successes += 1
+        return True
+    if outcome == "satisfied":
+        stats.already_satisfied += 1
+        return False
+    if not fallback:
+        return False
+
+    stats.fallback_attempts += 1
+    entry = state.orthogonality_center
+    assert entry is not None
+    original = [tensor.copy() for tensor in state.tensors]
+    original_flipped = state.flipped
+    original_dimensions = state.physical_dimensions.copy()
+    order = [entry, *range(entry + 1, state.length), *range(entry - 1, -1, -1)]
+    threshold = max(tol, 64 * np.finfo(float).eps) * max(1.0, abs(target))
+    succeeded = False
+
+    def accept(stage: Literal["scan", "frame"]) -> bool:
+        nonlocal succeeded
+        if not _move_center(state, entry):
+            stats.gauge_failures += 1
+            return False
+        if abs(expectation_value(state, mpo) - target) > threshold:
+            stats.solver_failures += 1
+            return False
+        succeeded = True
+        if stage == "scan":
+            stats.scan_successes += 1
+        else:
+            stats.frame_successes += 1
+        return True
+
+    try:
+        if np.linalg.norm(original[entry]) < np.sqrt(_ZERO_NORM_SQUARED):
+            stats.solver_failures += 1
+            return False
+        for site in order[1:]:
+            if not _move_center(state, site):
+                stats.gauge_failures += 1
+                return False
+            stats.scan_sites += 1
+            if _try_center_correction(state, mpo, target, tol=tol) == "corrected":
+                return accept("scan")
+
+        # The constrained solve must start with exactly the frame left by
+        # compression, where the manuscript's least-error statement applies.
+        state.tensors = [tensor.copy() for tensor in original]
+        state.set_center(entry)
+        for site in order:
+            if not _move_center(state, site):
+                stats.gauge_failures += 1
+                return False
+            stats.frames_checked += 1
+            status, problem = prepare_frame(
+                _center_operator(state, mpo, site), state.tensors[site], target, tol=threshold / 4
+            )
+            if status == "infeasible":
+                continue
+            if problem is None:
+                stats.solver_failures += 1
+                return False
+            stats.frame_attempts += 1
+            status, candidate = minimum_displacement(problem, tol=threshold / 2)
+            if candidate is None:
+                if status == "no_minimizer":
+                    stats.no_minimizer += 1
+                else:
+                    stats.solver_failures += 1
+                return False
+            state.tensors[site] = candidate.reshape(state.tensors[site].shape)
+            return accept("frame")
+        stats.infeasible += 1
+        return False
+    finally:
+        if not succeeded:
+            state.tensors = original
+            state.flipped = original_flipped
+            state.physical_dimensions = original_dimensions
+            state.set_center(entry)
 
 
 def restore_invariants_joint(
@@ -426,13 +574,31 @@ def restore_invariants_joint(
         msg = "restore_invariants_joint: MPS gauge unknown (orthogonality_center is None)."
         raise ValueError(msg)
 
+    stats = current_conservation_stats()
+    if stats is not None:
+        stats.joint_calls += 1
     center_tensor = state.tensors[center]
     norm_squared = float(np.vdot(center_tensor, center_tensor).real)
     if norm_squared < _ZERO_NORM_SQUARED:
+        if stats is not None:
+            stats.joint_unresolved += 1
         return False
 
     # The environments are fixed for the whole solve: only the center tensor changes.
     all_operators = [_center_operator(state, mpo, center) for mpo in mpos]
+
+    def finish(*, changed: bool) -> bool:
+        if stats is not None:
+            tensor = state.tensors[center]
+            norm = float(np.vdot(tensor, tensor).real)
+            threshold = max(tol, 64 * np.finfo(float).eps) * max(1.0, *map(abs, targets))
+            # Reuse the fixed environments; tracking adds no chain contractions.
+            if any(
+                abs(float(np.vdot(tensor, op(tensor)).real) / norm - goal) > threshold
+                for op, goal in zip(all_operators, targets, strict=True)
+            ):
+                stats.joint_unresolved += 1
+        return changed
 
     # Zero-variance drop: at round-off gradient norm the multiplier scales as the inverse
     # of that norm, so the constraint could be met only by a macroscopic displacement along
@@ -445,10 +611,10 @@ def restore_invariants_joint(
         if float(np.vdot(gradient, gradient).real) >= _ZERO_GRADIENT_SQUARED:
             kept.append(index)
     if not kept:
-        return False
+        return finish(changed=False)
     if len(kept) == 1:
         index = kept[0]
-        return restore_invariant_at_center(state, mpos[index], targets[index], tol=tol)
+        return finish(changed=restore_invariant_at_center(state, mpos[index], targets[index], tol=tol))
 
     operators = [all_operators[index] for index in kept]
     goals = np.asarray([targets[index] for index in kept], dtype=np.float64)
@@ -472,7 +638,7 @@ def restore_invariants_joint(
     norm_squared, gradients, drift = evaluate(center_tensor)
     residual = float(np.max(np.abs(drift)))
     if residual < threshold:
-        return False
+        return finish(changed=False)
 
     damping = 1e-3
     applied = False
@@ -512,7 +678,7 @@ def restore_invariants_joint(
         if not stepped:
             break  # no damping in range improved the residual
 
-    return applied
+    return finish(changed=applied)
 
 
 def apply_conservation(
@@ -537,16 +703,16 @@ def apply_conservation(
         Whether the center tensor was displaced.
     """
     if isinstance(target, EnergyTarget):
-        return restore_invariant_at_center(state, hamiltonian, target.value, tol=target.tol)
+        return restore_invariant(state, hamiltonian, target.value, tol=target.tol, fallback=target.fallback)
     if not target.mpos:
         return False
     if len(target.mpos) == 1:
-        return restore_invariant_at_center(state, target.mpos[0], target.values[0], tol=target.tol)
+        return restore_invariant(state, target.mpos[0], target.values[0], tol=target.tol, fallback=target.fallback)
     if target.joint:
         return restore_invariants_joint(state, target.mpos, target.values, tol=target.tol)
     # Each solve is exact for its own observable and perturbs the ones already applied.
     displaced = [
-        restore_invariant_at_center(state, mpo, value, tol=target.tol)
+        restore_invariant(state, mpo, value, tol=target.tol, fallback=target.fallback)
         for mpo, value in zip(target.mpos, target.values, strict=False)
     ]
     return any(displaced)

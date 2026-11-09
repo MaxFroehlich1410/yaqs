@@ -542,6 +542,7 @@ class AnalogSimParams(_ObservableOrderingMixin):
             with Hermitian MPOs commuting with the Hamiltonian. Empty by default.
         conserve_joint: If ``True`` (default), solve for all configured conserved
             quantities simultaneously rather than one at a time.
+        conserve_fallback: Enable rank-preserving recovery after a rejected scalar correction.
         conserve_tol: Relative tolerance of the conservation corrections.
     """
 
@@ -569,6 +570,7 @@ class AnalogSimParams(_ObservableOrderingMixin):
         conserve_observables: dict[str, MPO] | None = None,
         conserve_joint: bool = True,
         conserve_tol: float = 1e-13,
+        conserve_fallback: bool = True,
     ) -> None:
         """Physics simulation parameters initialization.
 
@@ -630,6 +632,9 @@ class AnalogSimParams(_ObservableOrderingMixin):
                 quantity in order, where each correction perturbs the previous ones;
                 this exists for comparison, not for production use. Ignored with fewer
                 than two quantities.
+            conserve_fallback: If True (default), try other centers and then the
+                minimum-displacement one-site solve after a rejected scalar correction.
+                This is a scalar fallback, not a recovery for a coupled joint solve.
             conserve_tol: Relative tolerance of the conservation corrections. A correction
                 is skipped while its quantity is within ``conserve_tol * max(1, |target|)``
                 of the target, so a step that truncates nothing is left unchanged. Larger
@@ -674,6 +679,7 @@ class AnalogSimParams(_ObservableOrderingMixin):
         self.conserve_energy = conserve_energy
         self.conserve_observables: dict[str, MPO] = dict(conserve_observables) if conserve_observables else {}
         self.conserve_joint = conserve_joint
+        self.conserve_fallback = conserve_fallback
         self.conserve_tol = _validate_conserve_tol(conserve_tol)
 
 

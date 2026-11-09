@@ -35,6 +35,7 @@ if str(HERE) not in sys.path:
 import fixtures_n as fx  # ruff:ignore[module-import-not-at-top-of-file]
 import l16_joint_table as jt  # ruff:ignore[module-import-not-at-top-of-file]
 
+from mqt.yaqs import track_conservation
 from mqt.yaqs.analog.analog_tjm import capture_conservation_target  # ruff:ignore[module-import-not-at-top-of-file]
 from mqt.yaqs.analog.evolution import apply_unitary_evolution  # ruff:ignore[module-import-not-at-top-of-file]
 
@@ -168,18 +169,19 @@ def main() -> int:
         jt.install_correction(sweep)
         started = time.perf_counter()
         try:
-            for step in range(1, steps + 1):
-                # The library's own dispatch, so this measures the shipped code path: BUG
-                # corrects inside the step after each of its two compressions, 2-TDVP after
-                # the completed sweep at the site-0 centre it leaves.
-                apply_unitary_evolution(state, hamiltonian, params, conservation_target=target)
+            with track_conservation() as conservation_stats:
+                for step in range(1, steps + 1):
+                    # The library's own dispatch, so this measures the shipped code path: BUG
+                    # corrects inside the step after each of its two compressions, 2-TDVP after
+                    # the completed sweep at the site-0 centre it leaves.
+                    apply_unitary_evolution(state, hamiltonian, params, conservation_target=target)
 
-                if step % args.record_every == 0 or step == steps:
-                    values = measure(state, operators)
-                    times.append(step * DT)
-                    for name in operators:
-                        series[name].append(values[name])
-                    bonds.append(int(max(state.bond_dimensions())))
+                    if step % args.record_every == 0 or step == steps:
+                        values = measure(state, operators)
+                        times.append(step * DT)
+                        for name in operators:
+                            series[name].append(values[name])
+                        bonds.append(int(max(state.bond_dimensions())))
         finally:
             jt.install_correction("none")
 
@@ -188,6 +190,7 @@ def main() -> int:
             "variant": variant,
             "sweep": sweep,
             "solves": jt.SOLVES["n"],
+            "conservation_stats": conservation_stats.to_dict(),
             "cap": args.cap,
             "times": times,
             "values": series,
@@ -204,6 +207,12 @@ def main() -> int:
             f"  dSy={arm['drift']['Sy'][-1]:+.3e}  dSz={arm['drift']['Sz'][-1]:+.3e}"
             f"  dS2={arm['drift']['S2'][-1]:+.3e}"
             f"  ({arm['wall_seconds']:.0f}s)",
+            flush=True,
+        )
+
+        print(
+            f"  fallback: {conservation_stats.fallback_successes}/{conservation_stats.fallback_attempts} recovered; "
+            f"{conservation_stats.fallback_failures} unresolved",
             flush=True,
         )
 
