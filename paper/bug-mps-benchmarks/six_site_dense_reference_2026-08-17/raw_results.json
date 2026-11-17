@@ -1,0 +1,387 @@
+{
+  "git_commit": "089aa7a06db1579279b66aa5ffd204b068e64ea9",
+  "protocol": {
+    "bond_cap": null,
+    "coefficients": {
+      "Jx": [
+        0.37,
+        0.51,
+        0.29,
+        0.63,
+        0.43
+      ],
+      "Jy": [
+        0.31,
+        0.47,
+        0.39,
+        0.55,
+        0.35
+      ],
+      "Jz": [
+        0.61,
+        0.33,
+        0.49,
+        0.41,
+        0.57
+      ],
+      "hx": [
+        0.23,
+        -0.17,
+        0.31,
+        0.11,
+        -0.29,
+        0.19
+      ],
+      "hy": [
+        0.07,
+        -0.11,
+        0.13,
+        -0.05,
+        0.09,
+        -0.03
+      ],
+      "hz": [
+        -0.07,
+        0.13,
+        0.05,
+        -0.19,
+        0.17,
+        0.27
+      ]
+    },
+    "compression": false,
+    "dense_kronecker_order": "O_5 tensor ... tensor O_0",
+    "initial_basis_string_site_0_first": "010011",
+    "krylov_tolerance": 1e-12,
+    "length": 6,
+    "normalization": false,
+    "one_sweep": "Phi_h,c^(R->L)",
+    "site_0_vector_order": "least_significant_bit",
+    "timesteps": [
+      0.1,
+      0.05,
+      0.025,
+      0.0125,
+      0.00625
+    ],
+    "total_time": 0.4,
+    "two_sweeps_center": "Phi_h/2,c^(L->R) after Phi_h/2,c^(R->L)",
+    "two_sweeps_previous_basis": "same composition with explicit previous-basis retention"
+  },
+  "runs": {
+    "0.00625": {
+      "steps": 64,
+      "two_sweep_variant_phase_aligned_difference": 2.1073424255447017e-08,
+      "variants": {
+        "one_sweep_center": {
+          "all_values_finite": true,
+          "bond_profile": [
+            1,
+            4,
+            8,
+            8,
+            4,
+            2,
+            1
+          ],
+          "endpoint_restored": true,
+          "expected_orthogonality_center": 0,
+          "maximum_bond_dimension": 8,
+          "norm": 1.000000000000005,
+          "orthogonality_center": 0,
+          "phase_aligned_state_error": 0.008334978781038905
+        },
+        "two_sweeps_center": {
+          "all_values_finite": true,
+          "bond_profile": [
+            1,
+            2,
+            4,
+            8,
+            8,
+            4,
+            1
+          ],
+          "endpoint_restored": true,
+          "expected_orthogonality_center": 5,
+          "maximum_bond_dimension": 8,
+          "norm": 1.000000000000003,
+          "orthogonality_center": 5,
+          "phase_aligned_state_error": 0.00416456103459033
+        },
+        "two_sweeps_previous_basis": {
+          "all_values_finite": true,
+          "bond_profile": [
+            1,
+            2,
+            4,
+            8,
+            8,
+            4,
+            1
+          ],
+          "endpoint_restored": true,
+          "expected_orthogonality_center": 5,
+          "maximum_bond_dimension": 8,
+          "norm": 1.0000000000000122,
+          "orthogonality_center": 5,
+          "phase_aligned_state_error": 0.004164561034563672
+        }
+      }
+    },
+    "0.0125": {
+      "steps": 32,
+      "two_sweep_variant_phase_aligned_difference": 0.0,
+      "variants": {
+        "one_sweep_center": {
+          "all_values_finite": true,
+          "bond_profile": [
+            1,
+            4,
+            8,
+            8,
+            4,
+            2,
+            1
+          ],
+          "endpoint_restored": true,
+          "expected_orthogonality_center": 0,
+          "maximum_bond_dimension": 8,
+          "norm": 0.9999999999999969,
+          "orthogonality_center": 0,
+          "phase_aligned_state_error": 0.016697830217415468
+        },
+        "two_sweeps_center": {
+          "all_values_finite": true,
+          "bond_profile": [
+            1,
+            2,
+            4,
+            8,
+            8,
+            4,
+            1
+          ],
+          "endpoint_restored": true,
+          "expected_orthogonality_center": 5,
+          "maximum_bond_dimension": 8,
+          "norm": 0.9999999999999923,
+          "orthogonality_center": 5,
+          "phase_aligned_state_error": 0.008332922649425999
+        },
+        "two_sweeps_previous_basis": {
+          "all_values_finite": true,
+          "bond_profile": [
+            1,
+            2,
+            4,
+            8,
+            8,
+            4,
+            1
+          ],
+          "endpoint_restored": true,
+          "expected_orthogonality_center": 5,
+          "maximum_bond_dimension": 8,
+          "norm": 1.000000000000009,
+          "orthogonality_center": 5,
+          "phase_aligned_state_error": 0.008332922649412676
+        }
+      }
+    },
+    "0.025": {
+      "steps": 16,
+      "two_sweep_variant_phase_aligned_difference": 0.0,
+      "variants": {
+        "one_sweep_center": {
+          "all_values_finite": true,
+          "bond_profile": [
+            1,
+            4,
+            8,
+            8,
+            4,
+            2,
+            1
+          ],
+          "endpoint_restored": true,
+          "expected_orthogonality_center": 0,
+          "maximum_bond_dimension": 8,
+          "norm": 1.0000000000000036,
+          "orthogonality_center": 0,
+          "phase_aligned_state_error": 0.033504263548014605
+        },
+        "two_sweeps_center": {
+          "all_values_finite": true,
+          "bond_profile": [
+            1,
+            2,
+            4,
+            8,
+            8,
+            4,
+            1
+          ],
+          "endpoint_restored": true,
+          "expected_orthogonality_center": 5,
+          "maximum_bond_dimension": 8,
+          "norm": 0.9999999999999986,
+          "orthogonality_center": 5,
+          "phase_aligned_state_error": 0.016683230324606436
+        },
+        "two_sweeps_previous_basis": {
+          "all_values_finite": true,
+          "bond_profile": [
+            1,
+            2,
+            4,
+            8,
+            8,
+            4,
+            1
+          ],
+          "endpoint_restored": true,
+          "expected_orthogonality_center": 5,
+          "maximum_bond_dimension": 8,
+          "norm": 1.0000000000000115,
+          "orthogonality_center": 5,
+          "phase_aligned_state_error": 0.016683230324606436
+        }
+      }
+    },
+    "0.05": {
+      "steps": 8,
+      "two_sweep_variant_phase_aligned_difference": 0.0,
+      "variants": {
+        "one_sweep_center": {
+          "all_values_finite": true,
+          "bond_profile": [
+            1,
+            4,
+            8,
+            8,
+            4,
+            2,
+            1
+          ],
+          "endpoint_restored": true,
+          "expected_orthogonality_center": 0,
+          "maximum_bond_dimension": 8,
+          "norm": 0.9999999999999986,
+          "orthogonality_center": 0,
+          "phase_aligned_state_error": 0.06729271104433
+        },
+        "two_sweeps_center": {
+          "all_values_finite": true,
+          "bond_profile": [
+            1,
+            2,
+            4,
+            8,
+            8,
+            4,
+            1
+          ],
+          "endpoint_restored": true,
+          "expected_orthogonality_center": 5,
+          "maximum_bond_dimension": 8,
+          "norm": 1.0000000000000044,
+          "orthogonality_center": 5,
+          "phase_aligned_state_error": 0.03344740041259006
+        },
+        "two_sweeps_previous_basis": {
+          "all_values_finite": true,
+          "bond_profile": [
+            1,
+            2,
+            4,
+            8,
+            8,
+            4,
+            1
+          ],
+          "endpoint_restored": true,
+          "expected_orthogonality_center": 5,
+          "maximum_bond_dimension": 8,
+          "norm": 0.9999999999999998,
+          "orthogonality_center": 5,
+          "phase_aligned_state_error": 0.033447400412609976
+        }
+      }
+    },
+    "0.1": {
+      "steps": 4,
+      "two_sweep_variant_phase_aligned_difference": 0.0,
+      "variants": {
+        "one_sweep_center": {
+          "all_values_finite": true,
+          "bond_profile": [
+            1,
+            4,
+            8,
+            8,
+            4,
+            2,
+            1
+          ],
+          "endpoint_restored": true,
+          "expected_orthogonality_center": 0,
+          "maximum_bond_dimension": 8,
+          "norm": 1.0000000000000004,
+          "orthogonality_center": 0,
+          "phase_aligned_state_error": 0.13526378345004114
+        },
+        "two_sweeps_center": {
+          "all_values_finite": true,
+          "bond_profile": [
+            1,
+            2,
+            4,
+            8,
+            8,
+            4,
+            1
+          ],
+          "endpoint_restored": true,
+          "expected_orthogonality_center": 5,
+          "maximum_bond_dimension": 8,
+          "norm": 1.0000000000000004,
+          "orthogonality_center": 5,
+          "phase_aligned_state_error": 0.0671661165067294
+        },
+        "two_sweeps_previous_basis": {
+          "all_values_finite": true,
+          "bond_profile": [
+            1,
+            2,
+            4,
+            8,
+            8,
+            4,
+            1
+          ],
+          "endpoint_restored": true,
+          "expected_orthogonality_center": 5,
+          "maximum_bond_dimension": 8,
+          "norm": 0.999999999999999,
+          "orthogonality_center": 5,
+          "phase_aligned_state_error": 0.06716611650673437
+        }
+      }
+    }
+  },
+  "schema_version": 1,
+  "structural_checks": {
+    "all_endpoints_restored": true,
+    "all_results_finite": true,
+    "dense_reference_norm_error": 2.220446049250313e-16,
+    "expected_initial_state_nonzero_index": 50,
+    "initial_input_tensors_preserved": true,
+    "initial_state_nonzero_index": 50,
+    "mpo_dense_relative_frobenius_error": 9.972850107839453e-17,
+    "preparation_preserves_input_tensors": true,
+    "reflected_mpo_dense_relative_frobenius_error": 1.0147996472077395e-16,
+    "reflection_asymmetry_residual": 0.4338667962246875,
+    "site_ordering_gap": 0.43386679622468755
+  }
+}

@@ -1,0 +1,281 @@
+{
+  "description": "SHA-256 hashes of published recovered benchmark files. Original files are preserved without reformatting.",
+  "files": {
+    "l16_matched_optimized_2026-08-12/RESULTS.md": {
+      "sha256": "982107a04902b59b7b0a0a2f7bbeb489a3d9914eb1dbf29e0b1f4b32633f9db4",
+      "size_bytes": 4683
+    },
+    "l16_matched_optimized_2026-08-12/VALIDATION.md": {
+      "sha256": "7c03a6898848dcb52cb570ad78715e1ae5fc1bd89594e63c4557c734c74bd8e5",
+      "size_bytes": 6597
+    },
+    "l16_matched_optimized_2026-08-12/julia_hs_mpo_nonzero.csv": {
+      "sha256": "69ced015600cea9346277fe53968b7e75a65a5291cca60e539f10eb0caca3f2c",
+      "size_bytes": 42113
+    },
+    "l16_matched_optimized_2026-08-12/raw_results.json": {
+      "sha256": "1e6bef5912646e612d7c5c64d961271fdff84ff791cee07ccc37fd9a4e38948d",
+      "size_bytes": 34761
+    },
+    "l16_matched_optimized_2026-08-12/summary.csv": {
+      "sha256": "8f0d1eeddbe21b9649c8149913f46bb8099dcbaf3c49ef4acbcdb0270d7bef9c",
+      "size_bytes": 4210
+    },
+    "l16_tradeoff_caps_2026-08-12/MANIFEST.json": {
+      "sha256": "6db6ac3c8001ef146eb0ffd8b0ae101fe3bbc315a6721bd57988445328365766",
+      "size_bytes": 11080
+    },
+    "l16_tradeoff_caps_2026-08-12/RESULTS.md": {
+      "sha256": "76e0225b077440d5c20da8018dd057c57d607f7b426c2abb775b7a71898f2dbc",
+      "size_bytes": 3165
+    },
+    "l16_tradeoff_caps_2026-08-12/VALIDATION.md": {
+      "sha256": "12fdb231a2735016f932840bb479671abe9cb27e48ab8a1cb2a845274f710bad",
+      "size_bytes": 56408
+    },
+    "l16_tradeoff_caps_2026-08-12/bug_first_step_checkpoints.csv": {
+      "sha256": "450bfd82a8ba2add4037f7d1fa34a97c6ab1417e3e791b1f6f8e92b989863497",
+      "size_bytes": 126367
+    },
+    "l16_tradeoff_caps_2026-08-12/cap_study.csv": {
+      "sha256": "98f61288928d0fc4dee2ffde003f943f64f44e940d4b6527afdfb032bdd2bbb8",
+      "size_bytes": 2363
+    },
+    "l16_tradeoff_caps_2026-08-12/fixtures/hs_fixture.npz": {
+      "sha256": "04b3d421f8038ed5c64ab8cd4148b34f0bbc720ef5e32fce28e8641bfac8de0e",
+      "size_bytes": 2018897
+    },
+    "l16_tradeoff_caps_2026-08-12/fixtures/tfim_fixture.npz": {
+      "sha256": "45ae4b0078ba34a85d7836a3825c438ee7e17533a72c02a310f00b6850c51b94",
+      "size_bytes": 1525465
+    },
+    "l16_tradeoff_caps_2026-08-12/provenance/environment.json": {
+      "sha256": "d72ef21682967a21482b676148df54ab04d80192838e99f8273d98a0aa3e839e",
+      "size_bytes": 1384
+    },
+    "l16_tradeoff_caps_2026-08-12/provenance/matched_raw_results_source.json": {
+      "sha256": "1e6bef5912646e612d7c5c64d961271fdff84ff791cee07ccc37fd9a4e38948d",
+      "size_bytes": 34761
+    },
+    "l16_tradeoff_caps_2026-08-12/provenance/pip_freeze.txt": {
+      "sha256": "a595f216970acc37259e9fe0b1975b15d6906dbd07eddca63dd72b05e5ceecd5",
+      "size_bytes": 105
+    },
+    "l16_tradeoff_caps_2026-08-12/provenance/yaqs_git_branch.txt": {
+      "sha256": "8c0dbd25c99bbd6793d2b3a31cc81c6acc48531be9ce60155bbb08a404c3d3fc",
+      "size_bytes": 27
+    },
+    "l16_tradeoff_caps_2026-08-12/provenance/yaqs_git_head.txt": {
+      "sha256": "603d9e8a75626f44090322964decf558e73aa2ecf61dc4f37d7401e6bc583106",
+      "size_bytes": 41
+    },
+    "l16_tradeoff_caps_2026-08-12/provenance/yaqs_git_status.txt": {
+      "sha256": "b2b31b110866dbbfe20eaa84c5434a7b5ac1179b6d74a8cd12a0a12dd2abbe50",
+      "size_bytes": 445
+    },
+    "l16_tradeoff_caps_2026-08-12/provenance/yaqs_worktree.patch": {
+      "sha256": "cbddbf87e38d0d775a76e7b26122b668da16b3011313ffa1bbef2ee7705c1f4a",
+      "size_bytes": 26130
+    },
+    "l16_tradeoff_caps_2026-08-12/raw_results.json": {
+      "sha256": "6d5795410618a5b7c13c933094227c973bb9aed66d5a8213e78e802c0deb9477",
+      "size_bytes": 169855
+    },
+    "l16_tradeoff_caps_2026-08-12/runtime_accuracy_tradeoff.pdf": {
+      "sha256": "fe97c882cd09a90d615e6605e14bb2a03e9bd3e5308d58ceb017e00652163007",
+      "size_bytes": 30708
+    },
+    "l16_tradeoff_caps_2026-08-12/runtime_accuracy_tradeoff.png": {
+      "sha256": "23667891b594f18960196840cfc224d0a81afc1f31957c3701fb2f2f768d46f8",
+      "size_bytes": 145763
+    },
+    "l16_tradeoff_caps_2026-08-12/states/hs_dt-0p0025_eps-1em08_cap-512_2tdvp.npz": {
+      "sha256": "2e9fda71376f3ef3db1f93a3af25422b272a010f3009b9fabc40504df83fc466",
+      "size_bytes": 1025547
+    },
+    "l16_tradeoff_caps_2026-08-12/states/hs_dt-0p0025_eps-1em08_cap-512_bug.npz": {
+      "sha256": "3488ac727d50bcd27d15b254caa6a20c31201b721bed23d5313f6174d5dedefa",
+      "size_bytes": 1029258
+    },
+    "l16_tradeoff_caps_2026-08-12/states/hs_dt-0p0025_eps-1em10_cap-512_2tdvp.npz": {
+      "sha256": "3753dd0712f22937ba9c1a9be6592e46ab5efb5717bc09372473f085affd713d",
+      "size_bytes": 1018717
+    },
+    "l16_tradeoff_caps_2026-08-12/states/hs_dt-0p0025_eps-1em10_cap-512_bug.npz": {
+      "sha256": "41391122df733aa103a163ea537bafda28511c5a0010eb42d5ec71db65bc6f05",
+      "size_bytes": 1014810
+    },
+    "l16_tradeoff_caps_2026-08-12/states/hs_dt-0p0025_eps-1em14_cap-512_2tdvp.npz": {
+      "sha256": "15fb791ab35dc00a435f7b00e63f1128c98ae8e4ff36439026b1602fc8a77a9d",
+      "size_bytes": 1017864
+    },
+    "l16_tradeoff_caps_2026-08-12/states/hs_dt-0p0025_eps-1em14_cap-512_bug.npz": {
+      "sha256": "384a2dc5022c06b7789104a71fd945578aa96a378ec064722343f95c33f1ef86",
+      "size_bytes": 1015820
+    },
+    "l16_tradeoff_caps_2026-08-12/states/hs_dt-0p005_eps-1em08_cap-512_2tdvp.npz": {
+      "sha256": "74195ced125eae0e30aed5e72eabd38015a2c103f5c0703483923d7898fe3a6e",
+      "size_bytes": 1027458
+    },
+    "l16_tradeoff_caps_2026-08-12/states/hs_dt-0p005_eps-1em08_cap-512_bug.npz": {
+      "sha256": "4eb39137177f16435ec3b0498c2ea79c691b5493f6fa1ee1d9fbab63b02cf959",
+      "size_bytes": 1019419
+    },
+    "l16_tradeoff_caps_2026-08-12/states/hs_dt-0p005_eps-1em10_cap-512_2tdvp.npz": {
+      "sha256": "b4f6fa80a27ee5f36989b043ea20a7f1ffd8c28a0d6fd8adc7f4b2442c392b39",
+      "size_bytes": 1016883
+    },
+    "l16_tradeoff_caps_2026-08-12/states/hs_dt-0p005_eps-1em10_cap-512_bug.npz": {
+      "sha256": "6f6baad2c512834541c95136131edb6916e887b5d1aeb65558211fe941893d77",
+      "size_bytes": 1014597
+    },
+    "l16_tradeoff_caps_2026-08-12/states/hs_dt-0p005_eps-1em12_cap-32_2tdvp.npz": {
+      "sha256": "7da99fefe7f7aaac74d04daa69e15d7ebfd8477e740fec7bfa7831b43ad95769",
+      "size_bytes": 1024583
+    },
+    "l16_tradeoff_caps_2026-08-12/states/hs_dt-0p005_eps-1em12_cap-32_bug.npz": {
+      "sha256": "23a661aa6df3c54da3cb9a4cd4c98bdb6c37d125dcd7d588970454f91fcdbeda",
+      "size_bytes": 1015226
+    },
+    "l16_tradeoff_caps_2026-08-12/states/hs_dt-0p005_eps-1em12_cap-64_2tdvp.npz": {
+      "sha256": "f6755e4cdcf124fb3e9c2bcfe60b504607a66cd26f7de9a2c453c5f3903eeed2",
+      "size_bytes": 1016601
+    },
+    "l16_tradeoff_caps_2026-08-12/states/hs_dt-0p005_eps-1em12_cap-64_bug.npz": {
+      "sha256": "ad0e00e3722b1b8d59b8cd14fd45dca4e15b18bf1061e6e08b41875789a48d36",
+      "size_bytes": 1014832
+    },
+    "l16_tradeoff_caps_2026-08-12/states/hs_dt-0p005_eps-1em12_cap-96_2tdvp.npz": {
+      "sha256": "d60886e3a9f7e36e99b53b5e5c25a50b18b277745abf81004b8fa552486ed117",
+      "size_bytes": 1016876
+    },
+    "l16_tradeoff_caps_2026-08-12/states/hs_dt-0p005_eps-1em12_cap-96_bug.npz": {
+      "sha256": "243db56500736582037de0da518453722a94d0299e448d744fd653c241c34ed4",
+      "size_bytes": 1014531
+    },
+    "l16_tradeoff_caps_2026-08-12/states/hs_dt-0p005_eps-1em14_cap-512_2tdvp.npz": {
+      "sha256": "0cb7d2304f3e8e38fb61b399a1fca707618ff73a8a583fa3bf064568670bec0a",
+      "size_bytes": 1027131
+    },
+    "l16_tradeoff_caps_2026-08-12/states/hs_dt-0p005_eps-1em14_cap-512_bug.npz": {
+      "sha256": "d38ac184e75cdff4fcd40650bc1f52b6fbc0eaf98a51e73191ec828877cba79a",
+      "size_bytes": 1017020
+    },
+    "l16_tradeoff_caps_2026-08-12/states/hs_dt-0p01_eps-1em08_cap-512_2tdvp.npz": {
+      "sha256": "2472ae3ab4df7003447f736b93b8f05a6606f18c97c97df12893857e27a13e2f",
+      "size_bytes": 1023616
+    },
+    "l16_tradeoff_caps_2026-08-12/states/hs_dt-0p01_eps-1em08_cap-512_bug.npz": {
+      "sha256": "1bee10b4ec40b24310cad28df39a785c3e65a84910b85317f3b2ec273dd09ec4",
+      "size_bytes": 1015420
+    },
+    "l16_tradeoff_caps_2026-08-12/states/hs_dt-0p01_eps-1em10_cap-512_2tdvp.npz": {
+      "sha256": "ef86b5582261be5c6173b2ba6a79e0df2bf099991a75ea8aafb997ea9e58f5cb",
+      "size_bytes": 1016584
+    },
+    "l16_tradeoff_caps_2026-08-12/states/hs_dt-0p01_eps-1em10_cap-512_bug.npz": {
+      "sha256": "4a7856365af7faa27e58bb994f9858e4b09a8f73c6fb5cad8af88cf09953f099",
+      "size_bytes": 1014601
+    },
+    "l16_tradeoff_caps_2026-08-12/states/hs_dt-0p01_eps-1em14_cap-512_2tdvp.npz": {
+      "sha256": "77c477710e48d56debbdf2a32d0b58c7fd81eb8435be77113eb31496bd849528",
+      "size_bytes": 1025258
+    },
+    "l16_tradeoff_caps_2026-08-12/states/hs_dt-0p01_eps-1em14_cap-512_bug.npz": {
+      "sha256": "83597fe9b70a5774bc801791f41a83ba709ac76bac8b5e83dfedcd449af5a820",
+      "size_bytes": 1015776
+    },
+    "l16_tradeoff_caps_2026-08-12/states/tfim_dt-0p0025_eps-1em08_cap-512_2tdvp.npz": {
+      "sha256": "3780b0dbaf6c15d616da4ad4666ed626c13ef811e48cebd4b5959b34c4d2905c",
+      "size_bytes": 989302
+    },
+    "l16_tradeoff_caps_2026-08-12/states/tfim_dt-0p0025_eps-1em08_cap-512_bug.npz": {
+      "sha256": "317408f6e412db51d2aabdb9e84809ba36e6654259239c72ca7f06d1471eab37",
+      "size_bytes": 1001905
+    },
+    "l16_tradeoff_caps_2026-08-12/states/tfim_dt-0p0025_eps-1em10_cap-512_2tdvp.npz": {
+      "sha256": "f040ff9db7c8e2af77df69bb1285412d3ad2b4ca95ab60aa2bfdfefccef35cac",
+      "size_bytes": 986359
+    },
+    "l16_tradeoff_caps_2026-08-12/states/tfim_dt-0p0025_eps-1em10_cap-512_bug.npz": {
+      "sha256": "f4e39afa8ed74e8bc9c3539292a294e59f4938021f9ca86e9cb79f3faed0ce16",
+      "size_bytes": 1002165
+    },
+    "l16_tradeoff_caps_2026-08-12/states/tfim_dt-0p0025_eps-1em14_cap-512_2tdvp.npz": {
+      "sha256": "028af0d03fe9cfeb4619d7d20018deaa6a5e433f60fe0674f5544a09f592dc26",
+      "size_bytes": 983104
+    },
+    "l16_tradeoff_caps_2026-08-12/states/tfim_dt-0p0025_eps-1em14_cap-512_bug.npz": {
+      "sha256": "e031ee21be546a17cdda358fd7e9fbe75f419da7502a1e05dd643cae90354916",
+      "size_bytes": 1002112
+    },
+    "l16_tradeoff_caps_2026-08-12/states/tfim_dt-0p005_eps-1em08_cap-512_2tdvp.npz": {
+      "sha256": "9feb8345fb5a59bc4eecac1b042a83fcd09dc78a80f45a9d8717a964d642321e",
+      "size_bytes": 989704
+    },
+    "l16_tradeoff_caps_2026-08-12/states/tfim_dt-0p005_eps-1em08_cap-512_bug.npz": {
+      "sha256": "45ed44fbc251ca9167521a7f95e07cfef0cad084d54e97a57fd0d8ddcc52ebf5",
+      "size_bytes": 1002539
+    },
+    "l16_tradeoff_caps_2026-08-12/states/tfim_dt-0p005_eps-1em10_cap-512_2tdvp.npz": {
+      "sha256": "2fa65c0f5ea82c9b9e4fa88b3e896cf3aa73dd672496b3c3d8e63e40e18c5901",
+      "size_bytes": 988338
+    },
+    "l16_tradeoff_caps_2026-08-12/states/tfim_dt-0p005_eps-1em10_cap-512_bug.npz": {
+      "sha256": "742619f6cebc303378fa1f5101528528bfb344396f84981e66a9bb064077d631",
+      "size_bytes": 1002594
+    },
+    "l16_tradeoff_caps_2026-08-12/states/tfim_dt-0p005_eps-1em14_cap-512_2tdvp.npz": {
+      "sha256": "50495abf75516d2d8cb29e317981f4d0619049d09e80478923af3fac051bb099",
+      "size_bytes": 982365
+    },
+    "l16_tradeoff_caps_2026-08-12/states/tfim_dt-0p005_eps-1em14_cap-512_bug.npz": {
+      "sha256": "b7c76a5544369603efd394cc17d9d956a284e1f696ab38867677daba03537390",
+      "size_bytes": 1002595
+    },
+    "l16_tradeoff_caps_2026-08-12/states/tfim_dt-0p01_eps-1em08_cap-512_2tdvp.npz": {
+      "sha256": "80c063f5ba3709ce6ab54611a18435e5f71b00936eb27e557f5ce7806a602183",
+      "size_bytes": 992021
+    },
+    "l16_tradeoff_caps_2026-08-12/states/tfim_dt-0p01_eps-1em08_cap-512_bug.npz": {
+      "sha256": "9aedfb51ee8683215eecb4600b3f8050034d81a6f6ecdc3360901163853955cc",
+      "size_bytes": 1003638
+    },
+    "l16_tradeoff_caps_2026-08-12/states/tfim_dt-0p01_eps-1em10_cap-512_2tdvp.npz": {
+      "sha256": "bbeea6f85b97c3d0ada7e56e5e753c6246fe386d417522f5b75ed9a1e72f6c32",
+      "size_bytes": 989255
+    },
+    "l16_tradeoff_caps_2026-08-12/states/tfim_dt-0p01_eps-1em10_cap-512_bug.npz": {
+      "sha256": "bd7b2d87c9d0b38d9f3ea836afefb18d353167feb8a053025347633690d7a5e4",
+      "size_bytes": 1003640
+    },
+    "l16_tradeoff_caps_2026-08-12/states/tfim_dt-0p01_eps-1em14_cap-512_2tdvp.npz": {
+      "sha256": "87d316a27fecf7873607e71010611180464132c1b615e26ae051ce6b8e411941",
+      "size_bytes": 983262
+    },
+    "l16_tradeoff_caps_2026-08-12/states/tfim_dt-0p01_eps-1em14_cap-512_bug.npz": {
+      "sha256": "49caa4a9176f7fe7ba8828f87e096a5762a7b285b7a9ad426e2e27dc86dbb404",
+      "size_bytes": 1005615
+    },
+    "l16_tradeoff_caps_2026-08-12/timing_samples.csv": {
+      "sha256": "59d1580b2b17e797cbd426cf59bd74ae8b084c8cbffe81986c1d05d454ecb4b0",
+      "size_bytes": 14545
+    },
+    "l16_tradeoff_caps_2026-08-12/tradeoff_all_points.csv": {
+      "sha256": "2e623f42973c386b41094380e7a730a85205f2bcf84841a0515327f70658cc35",
+      "size_bytes": 21447
+    },
+    "l16_tradeoff_caps_2026-08-12/tradeoff_pareto_points.csv": {
+      "sha256": "88ff7086628e2cd77a9ff498c002dd45ce94eb7ebadd455710655c7799d6a14b",
+      "size_bytes": 9739
+    },
+    "six_site_dense_reference_2026-08-17/VALIDATION.md": {
+      "sha256": "b279748b5788c280c9a85aae420e190a56e7ff0d0b7715e8c3fa50e58df8e94d",
+      "size_bytes": 4142
+    },
+    "six_site_dense_reference_2026-08-17/raw_results.json": {
+      "sha256": "42cf259706015133f3a206031a5425a248e807a43dc0783460b69c8b28d13dd4",
+      "size_bytes": 9801
+    }
+  }
+}

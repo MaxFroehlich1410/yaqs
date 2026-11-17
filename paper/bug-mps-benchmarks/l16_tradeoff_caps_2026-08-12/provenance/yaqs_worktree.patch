@@ -1,0 +1,615 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 4b59f29c..bcdd7c39 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -24,7 +24,9 @@ releases may include breaking changes.
+ 
+ ### Changed
+ 
+-- updated BUG to use alternating endpoint root ([#539]) ([**@aaronleesander**])
++- updated BUG to use alternating endpoint roots, compress with the TDVP rank
++  floor after each half-sweep, reuse its canonical gauge, and carry the
++  compression endpoint through reflection ([#539]) ([**@aaronleesander**])
+ - tested and documented the multi-qubit local noise rule ([#529])
+   ([**@Pouri96**])
+ - hardened stability of noise model, timestep selection, and RNG ([#527])
+diff --git a/UPGRADING.md b/UPGRADING.md
+index a1425b39..279aa69e 100644
+--- a/UPGRADING.md
++++ b/UPGRADING.md
+@@ -6,6 +6,17 @@ of changes including minor and patch releases, please refer to the
+ 
+ ## [Unreleased]
+ 
++### BUG compression now occurs after each half-sweep
++
++Alternating-endpoint BUG evolution now compresses and optionally normalizes the
++MPS after both half-sweeps. The second half-sweep therefore runs on the retained
++bond profile. BUG compression also uses the same minimum retained rank as TDVP:
++``min(2, max_bond_dim)``. Compression now leaves the center at its sweep
++endpoint; network reflection converts it directly into the next entry center.
++Normalization rescales that center tensor instead of canonicalizing the full MPS
++again. Runs that depend on the former single compression at the end of a full
++step must be regenerated.
++
+ ### Breaking: analog durations must contain a whole number of fixed time steps
+ 
+ `AnalogSimParams` now requires a finite, positive `dt` and a finite,
+diff --git a/src/mqt/yaqs/core/data_structures/mps.py b/src/mqt/yaqs/core/data_structures/mps.py
+index b5cf64bd..1dac9137 100644
+--- a/src/mqt/yaqs/core/data_structures/mps.py
++++ b/src/mqt/yaqs/core/data_structures/mps.py
+@@ -739,10 +739,10 @@ class MPS:
+ 
+             # If normalizing, we just throw away the R
+             if current_orthogonality_center + 1 < self.length:
+-                self.tensors[current_orthogonality_center + 1] = oe.contract(
+-                    "ij, ajc->aic",
+-                    bond_tensor,
+-                    self.tensors[current_orthogonality_center + 1],
++                next_tensor = self.tensors[current_orthogonality_center + 1]
++                self.tensors[current_orthogonality_center + 1] = np.asarray(
++                    np.tensordot(bond_tensor, next_tensor, axes=(1, 1)).transpose(1, 0, 2),
++                    dtype=np.complex128,
+                 )
+         elif decomposition == "SVD":
+             a, b = (
+@@ -844,6 +844,9 @@ class MPS:
+         *,
+         max_bond_dim: int | None = None,
+         trunc_mode: TruncMode = "discarded_weight",
++        min_keep: int = 1,
++        canonicalize: bool = True,
++        restore_center: bool = True,
+     ) -> None:
+         """Compress in place by right-canonicalizing, then truncating left-to-right.
+ 
+@@ -862,6 +865,14 @@ class MPS:
+             trunc_mode: Truncation mode forwarded to the two-site SVD split
+                 (``"discarded_weight"``, ``"relative"``, ``"hard_cutoff"``, or
+                 ``"relative_discarded_weight"``).
++            min_keep: Minimum number of singular values retained on every bond,
++                subject to the available rank and ``max_bond_dim``.
++            canonicalize: Whether to establish right-canonical form before the
++                truncation sweep. If ``False``, the caller guarantees that the
++                MPS is already right-canonical with center at site ``0``.
++            restore_center: Whether to move the center back to its entry site
++                after compression. If ``False``, leave it at the final site of
++                the left-to-right SVD sweep.
+         """
+         if self.length == 1:
+             return
+@@ -873,7 +884,10 @@ class MPS:
+             orth_center = canonical[0] if canonical and canonical[0] >= 0 else self.length // 2
+ 
+         # Right-canonical form without χ truncation (center at site 0).
+-        self.set_canonical_form(0, decomposition="QR")
++        if canonicalize:
++            self.set_canonical_form(0, decomposition="QR")
++        else:
++            self.assert_center(0, context="compress(canonicalize=False)")
+ 
+         for site in range(self.length - 1):
+             left_tensor = self.tensors[site]
+@@ -886,11 +900,15 @@ class MPS:
+                 trunc_mode=trunc_mode,
+                 threshold=threshold,
+                 max_bond_dim=max_bond_dim,
++                min_keep=min_keep,
+             )
+             self.tensors[site] = left_new
+             self.tensors[site + 1] = right_new
+             self._orthogonality_center = site + 1
+ 
++        if not restore_center:
++            return
++
+         # Restore the caller's center without additional truncation.
+         assert self._orthogonality_center is not None
+         while self._orthogonality_center < orth_center:
+diff --git a/src/mqt/yaqs/core/data_structures/simulation_parameters.py b/src/mqt/yaqs/core/data_structures/simulation_parameters.py
+index 04f6fb51..f89b8163 100644
+--- a/src/mqt/yaqs/core/data_structures/simulation_parameters.py
++++ b/src/mqt/yaqs/core/data_structures/simulation_parameters.py
+@@ -566,7 +566,7 @@ class AnalogSimParams(_ObservableOrderingMixin):
+             sample_timesteps: Whether to sample at intermediate time steps.
+             evolution_mode: Tensor evolution mode (default ``EvolutionMode.TDVP``).
+                 ``EvolutionMode.BUG`` uses center-augmented alternating endpoints with
+-                one compression and renormalization after each ``dt`` step.
++                compression and renormalization after each half-sweep.
+             get_state: If ``True``, request the final state on the returned :class:`~mqt.yaqs.Result`.
+             multi_time_observables: For ``list[State]`` unitary ensemble runs only, list of ``(A, B)``
+                 pairs evaluated as ``<psi(t)|A U(t) B|psi(0)>``. Autocorrelation is the special
+diff --git a/src/mqt/yaqs/core/methods/bug.py b/src/mqt/yaqs/core/methods/bug.py
+index 1e62e585..b9eea8b7 100644
+--- a/src/mqt/yaqs/core/methods/bug.py
++++ b/src/mqt/yaqs/core/methods/bug.py
+@@ -9,19 +9,20 @@
+ 
+ Refer to Ceruti et al. (2023) doi:10.1137/22M1473790 for details of the method
+ for TTN. Select BUG with ``EvolutionMode.BUG``. Each physical step uses
+-center-augmented alternating endpoints, one SVD compression after the full
+-``dt`` composition, and renormalization after compression.
++center-augmented alternating endpoints and applies SVD compression after each
++half-sweep, with optional renormalization after both compressions.
+ """
+ 
+ from __future__ import annotations
+ 
+ from copy import copy
+-from typing import TYPE_CHECKING
++from typing import TYPE_CHECKING, Protocol
+ 
+ import numpy as np
+ 
+ from .decompositions import left_qr, right_qr
+ from .tdvp.primitives import update_left_environment, update_right_environment, update_site
++from .tdvp.sweep_utils import get_min_keep
+ 
+ if TYPE_CHECKING:
+     from numpy.typing import NDArray
+@@ -31,6 +32,41 @@ if TYPE_CHECKING:
+     from ..data_structures.simulation_parameters import AnalogSimParams, DigitalSimParams
+ 
+ 
++class BUGCheckpoint(Protocol):
++    """Callback used to inspect the four stages of an alternating BUG step."""
++
++    def __call__(self, name: str, state: MPS, *, reflected: bool) -> None:
++        """Observe ``state`` without mutating it."""
++
++
++def _move_center_to_zero(state: MPS) -> None:
++    """Recover the public center-at-exit contract after an interrupted BUG step."""
++    center = state.orthogonality_center
++    if center is None:
++        state.set_canonical_form(0, decomposition="QR")
++        return
++    while center > 0:
++        state.shift_orthogonality_center_left(center, decomposition="QR")
++        center -= 1
++    state.set_center(0)
++
++
++def _normalize_center_tensor(state: MPS) -> None:
++    """Normalize a canonical MPS by scaling only its orthogonality center.
++
++    Raises:
++        ValueError: If the state has no tracked orthogonality center.
++    """
++    center = state.orthogonality_center
++    if center is None:
++        msg = "BUG normalization requires a known orthogonality center."
++        raise ValueError(msg)
++    center_tensor = state.tensors[center]
++    norm = float(np.linalg.norm(center_tensor))
++    if norm > 1e-13:
++        state.tensors[center] = center_tensor / norm
++
++
+ def prepare_canonical_site_tensors(
+     state: MPS, mpo: MPO
+ ) -> tuple[list[NDArray[np.complex128]], list[NDArray[np.complex128]]]:
+@@ -191,23 +227,29 @@ def _postprocess_bug_state(
+     *,
+     normalize: bool = True,
+ ) -> None:
+-    """Apply SVD compression and optional renormalization after a full BUG step.
++    """Apply SVD compression and optional renormalization after one BUG half-sweep.
+ 
+     Args:
+         state: MPS to compress (and optionally normalize) in place.
+         sim_params: Simulation parameters supplying ``svd_threshold``,
+             ``max_bond_dim``, and ``trunc_mode`` for compression.
+-        normalize: If ``True`` (default), call ``state.normalize()`` after
+-            compression. If ``False``, leave the post-compression norm unchanged
+-            (used for auxiliary correlator states).
++        normalize: If ``True`` (default), rescale the canonical center tensor
++            after compression. If ``False``, leave the post-compression norm
++            unchanged (used for auxiliary correlator states).
+     """
++    # ``bug_sweep`` already leaves a right-canonical MPS rooted at site 0.
++    # Compress directly from that gauge and retain the opposite endpoint as the
++    # center. Reflection then turns it into site 0 for the next half-sweep.
+     state.compress(
+         sim_params.svd_threshold,
+         max_bond_dim=sim_params.max_bond_dim,
+         trunc_mode=sim_params.trunc_mode,
++        min_keep=get_min_keep(sim_params),
++        canonicalize=False,
++        restore_center=False,
+     )
+     if normalize:
+-        state.normalize()
++        _normalize_center_tensor(state)
+ 
+ 
+ def bug(
+@@ -216,11 +258,13 @@ def bug(
+     sim_params: AnalogSimParams | DigitalSimParams,
+     *,
+     normalize: bool = True,
++    checkpoint: BUGCheckpoint | None = None,
+ ) -> None:
+     """Perform one BUG physical step according to ``sim_params``.
+ 
+-    Uses center-augmented alternating endpoints (two half-sweeps of ``dt / 2``),
+-    then one SVD compression and optional renormalization.
++    Uses center-augmented alternating endpoints (two half-sweeps of ``dt / 2``).
++    Each half-sweep is followed by SVD compression and optional renormalization,
++    so the reflected half-sweep runs on the retained rank profile.
+ 
+     Args:
+         state: The MPS to evolve in place.
+@@ -229,6 +273,9 @@ def bug(
+         normalize: If ``True`` (default), renormalize after compression. Pass
+             ``False`` for auxiliary correlator states so non-unitary probe
+             amplitudes are preserved.
++        checkpoint: Optional diagnostic callback invoked after each half-sweep
++            and its compression. The callback receives a stage name and whether
++            the network is currently reflected.
+ 
+     Raises:
+         ValueError: If lengths differ or the gauge contract fails.
+@@ -240,18 +287,25 @@ def bug(
+     half_dt = sim_params.dt / 2.0
+     state.assert_center(0, context="bug")
+     bug_sweep(state, mpo, dt=half_dt, krylov_tol=sim_params.krylov_tol)
++    if checkpoint is not None:
++        checkpoint("first_half_sweep", state, reflected=False)
++    _postprocess_bug_state(state, sim_params, normalize=normalize)
++    if checkpoint is not None:
++        checkpoint("first_compression", state, reflected=False)
+ 
+     flipped = False
+     try:
+         state.flip_network()
+         flipped = True
+-        state.set_canonical_form(0, decomposition="QR")
+-        state.set_center(0)
++        state.assert_center(0, context="bug reflected half-sweep entry")
+         bug_sweep(state, mpo.reflected(), dt=half_dt, krylov_tol=sim_params.krylov_tol)
++        if checkpoint is not None:
++            checkpoint("second_half_sweep", state, reflected=True)
++        _postprocess_bug_state(state, sim_params, normalize=normalize)
++        if checkpoint is not None:
++            checkpoint("second_compression", state, reflected=True)
+     finally:
+         if flipped:
+             state.flip_network()
+-            state.set_canonical_form(0, decomposition="QR")
+-            state.set_center(0)
+-
+-    _postprocess_bug_state(state, sim_params, normalize=normalize)
++            if state.orthogonality_center != 0:
++                _move_center_to_zero(state)
+diff --git a/src/mqt/yaqs/core/methods/decompositions.py b/src/mqt/yaqs/core/methods/decompositions.py
+index 377a84d7..96fb9560 100644
+--- a/src/mqt/yaqs/core/methods/decompositions.py
++++ b/src/mqt/yaqs/core/methods/decompositions.py
+@@ -16,7 +16,6 @@ from __future__ import annotations
+ from typing import TYPE_CHECKING, Literal
+ 
+ import numpy as np
+-import opt_einsum as oe
+ 
+ from .. import linalg
+ from ..linalg.svd_utils import TruncMode
+@@ -97,9 +96,11 @@ def merge_two_site(left_tensor: NDArray[np.complex128], right_tensor: NDArray[np
+     Returns:
+         Merged tensor of shape ``(d_left * d_right, D0, D2)``.
+     """
+-    merged_tensor = np.asarray(oe.contract("abc,dce->adbe", left_tensor, right_tensor), dtype=np.complex128)
+-    merged_shape = merged_tensor.shape
+-    return merged_tensor.reshape((merged_shape[0] * merged_shape[1], merged_shape[2], merged_shape[3]))
++    # The contraction has only one possible pairwise path.  ``tensordot`` avoids
++    # asking opt_einsum to rediscover that path for every bond update.
++    merged_tensor = np.tensordot(left_tensor, right_tensor, axes=(2, 1)).transpose(0, 2, 1, 3)
++    phys_left, phys_right, left, right = merged_tensor.shape
++    return np.asarray(merged_tensor.reshape(phys_left * phys_right, left, right), dtype=np.complex128)
+ 
+ 
+ def split_two_site(
+diff --git a/src/mqt/yaqs/core/methods/matrix_exponential.py b/src/mqt/yaqs/core/methods/matrix_exponential.py
+index 08f5f16f..9c1a3f4c 100644
+--- a/src/mqt/yaqs/core/methods/matrix_exponential.py
++++ b/src/mqt/yaqs/core/methods/matrix_exponential.py
+@@ -29,6 +29,24 @@ if TYPE_CHECKING:
+ # Removed eager Numba import - now using lazy import inside expm_krylov
+ NUMBA_THRESHOLD = 4096  # Optimal based on benchmarks
+ 
++_KRYLOV_STATS = {"enabled": False, "calls": 0, "operator_applications": 0}
++
++
++def enable_krylov_stats(*, enabled: bool = True) -> None:
++    """Enable or disable lightweight Krylov work counters."""
++    _KRYLOV_STATS["enabled"] = enabled
++
++
++def reset_krylov_stats() -> None:
++    """Reset Krylov call and operator-application counters."""
++    _KRYLOV_STATS["calls"] = 0
++    _KRYLOV_STATS["operator_applications"] = 0
++
++
++def get_krylov_stats() -> dict[str, int]:
++    """Return the accumulated Krylov call and operator-application counts."""
++    return {"calls": _KRYLOV_STATS["calls"], "operator_applications": _KRYLOV_STATS["operator_applications"]}
++
+ 
+ def expm_krylov(
+     matrix_free_operator: Callable[[NDArray[np.complex128]], NDArray[np.complex128]],
+@@ -64,6 +82,19 @@ def expm_krylov(
+         NDArray[np.complex128]:
+             The approximate result of applying exp(-1j * dt * A) to vec.
+     """
++    if _KRYLOV_STATS["enabled"]:
++        _KRYLOV_STATS["calls"] += 1
++
++    def counted_operator(x: NDArray[np.complex128]) -> NDArray[np.complex128]:
++        """Apply the local operator and count the application when requested.
++
++        Returns:
++            Image of ``x`` under ``matrix_free_operator``.
++        """
++        if _KRYLOV_STATS["enabled"]:
++            _KRYLOV_STATS["operator_applications"] += 1
++        return matrix_free_operator(x)
++
+     vec_norm = np.linalg.norm(vec)
+     if vec_norm == 0:
+         return vec
+@@ -99,7 +130,7 @@ def expm_krylov(
+     cached_k = None
+     for j in range(m_max):
+         vj = v[:, j]
+-        w = matrix_free_operator(vj)
++        w = counted_operator(vj)
+ 
+         if use_numba:
+             # Use JIT-compiled kernel for orthogonalization
+diff --git a/src/mqt/yaqs/core/methods/tdvp/primitives.py b/src/mqt/yaqs/core/methods/tdvp/primitives.py
+index d9ebad18..830f0cb6 100644
+--- a/src/mqt/yaqs/core/methods/tdvp/primitives.py
++++ b/src/mqt/yaqs/core/methods/tdvp/primitives.py
+@@ -424,7 +424,7 @@ def _evolve_local_tensor_krylov(
+     tensor: NDArray[np.complex128],
+     dt: float,
+     proj_args: tuple[NDArray[np.complex128], ...],
+-    dense_threshold: int = DENSE_THRESHOLD,
++    dense_threshold: int | None = None,
+     *,
+     krylov_tol: float,
+ ) -> NDArray[np.complex128]:
+@@ -437,7 +437,8 @@ def _evolve_local_tensor_krylov(
+         dt: Time step for evolution.
+         proj_args: Extra arguments passed to ``projector`` before the tensor.
+         dense_threshold: Maximum flattened size for building a dense effective
+-            operator instead of a matrix-free projector.
++            operator instead of a matrix-free projector. ``None`` reads the
++            module-level ``DENSE_THRESHOLD`` at call time.
+         krylov_tol: Tolerance for the adaptive Krylov/Lanczos matrix exponential.
+ 
+     Returns:
+@@ -447,8 +448,9 @@ def _evolve_local_tensor_krylov(
+     tensor_shape = tensor.shape
+     tensor_flat = tensor.reshape(-1)
+     n_loc = tensor_flat.size
++    resolved_dense_threshold = DENSE_THRESHOLD if dense_threshold is None else dense_threshold
+ 
+-    if n_loc <= dense_threshold:
++    if n_loc <= resolved_dense_threshold:
+         # Build dense H_eff once from environments + MPO
+         h_eff = _build_dense_effective_operator(projector, proj_args, tensor_shape)
+ 
+diff --git a/tests/core/data_structures/test_mps.py b/tests/core/data_structures/test_mps.py
+index 5ae25e47..9d1526a4 100644
+--- a/tests/core/data_structures/test_mps.py
++++ b/tests/core/data_structures/test_mps.py
+@@ -1293,6 +1293,46 @@ def test_compress_single_site_returns_immediately() -> None:
+         np.testing.assert_allclose(before_tensor, after_tensor)
+ 
+ 
++def test_compress_forwards_min_keep_to_every_bond() -> None:
++    """``compress`` honors its retained-rank floor on all feasible bonds."""
++    mps = MPS(3, state="x+")
++    mps.pad_bond_dimension(2)
++    mps.compress(
++        threshold=1.0,
++        max_bond_dim=2,
++        trunc_mode="relative_discarded_weight",
++        min_keep=2,
++    )
++    assert [tensor.shape[2] for tensor in mps.tensors[:-1]] == [2, 2]
++
++
++def test_compress_known_gauge_can_leave_center_at_sweep_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
++    """Compression can reuse a known canonical gauge and retain its exit center."""
++    mps = random_mps([(2, 1, 2), (2, 2, 2), (2, 2, 1)])
++
++    def reject_recanonicalization(*_args: object, **_kwargs: object) -> None:
++        msg = "known canonical gauge should be reused"
++        raise AssertionError(msg)
++
++    monkeypatch.setattr(mps, "set_canonical_form", reject_recanonicalization)
++    mps.compress(
++        threshold=1e-12,
++        max_bond_dim=4,
++        canonicalize=False,
++        restore_center=False,
++    )
++    assert mps.orthogonality_center == mps.length - 1
++    assert mps.check_canonical_form() == [mps.length - 1]
++
++
++def test_compress_without_canonicalization_requires_center_zero() -> None:
++    """The fast compression path rejects an incompatible entry center."""
++    mps = random_mps([(2, 1, 2), (2, 2, 1)])
++    mps.shift_orthogonality_center_right(0)
++    with pytest.raises(ValueError, match=r"compress\(canonicalize=False\)"):
++        mps.compress(1e-12, canonicalize=False, restore_center=False)
++
++
+ def _bell_pair_mps() -> MPS:
+     """Auxiliary function to create a Bell-pair MPS.
+ 
+diff --git a/tests/core/methods/test_bug.py b/tests/core/methods/test_bug.py
+index 266a6d0b..18348eda 100644
+--- a/tests/core/methods/test_bug.py
++++ b/tests/core/methods/test_bug.py
+@@ -196,11 +196,17 @@ def test_bug_forwards_trunc_mode(monkeypatch: pytest.MonkeyPatch) -> None:
+         *,
+         max_bond_dim: int | None = None,
+         trunc_mode: str = "discarded_weight",
++        min_keep: int = 1,
++        canonicalize: bool = True,
++        restore_center: bool = True,
+     ) -> None:
+         seen["threshold"] = threshold
+         seen["max_bond_dim"] = max_bond_dim
+         seen["trunc_mode"] = trunc_mode
+-        self.set_center(0)
++        seen["min_keep"] = min_keep
++        seen["canonicalize"] = canonicalize
++        seen["restore_center"] = restore_center
++        self.set_center(self.length - 1)
+ 
+     monkeypatch.setattr(MPS, "compress", fake_compress)
+     bug(
+@@ -218,6 +224,9 @@ def test_bug_forwards_trunc_mode(monkeypatch: pytest.MonkeyPatch) -> None:
+     assert seen["trunc_mode"] == "relative"
+     assert seen["threshold"] == pytest.approx(1e-8)
+     assert seen["max_bond_dim"] == 4
++    assert seen["min_keep"] == 2
++    assert seen["canonicalize"] is False
++    assert seen["restore_center"] is False
+ 
+ 
+ def test_proposition2_overlap_frobenius_identity() -> None:
+@@ -304,8 +313,8 @@ def test_alternating_endpoints_uses_half_dt(monkeypatch: pytest.MonkeyPatch) ->
+         assert np.allclose(a, b)
+ 
+ 
+-def test_compression_once_per_step(monkeypatch: pytest.MonkeyPatch) -> None:
+-    """BUG compresses once after the full alternating composition."""
++def test_compression_after_each_half_sweep(monkeypatch: pytest.MonkeyPatch) -> None:
++    """BUG compresses after both halves of the alternating composition."""
+     counts = {"n": 0}
+ 
+     def counting_compress(
+@@ -314,10 +323,16 @@ def test_compression_once_per_step(monkeypatch: pytest.MonkeyPatch) -> None:
+         *,
+         max_bond_dim: int | None = None,
+         trunc_mode: str = "discarded_weight",
++        min_keep: int = 1,
++        canonicalize: bool = True,
++        restore_center: bool = True,
+     ) -> None:
+         del threshold, max_bond_dim, trunc_mode
++        assert min_keep == 2
++        assert canonicalize is False
++        assert restore_center is False
+         counts["n"] += 1
+-        self.set_center(0)
++        self.set_center(self.length - 1)
+ 
+     monkeypatch.setattr(MPS, "compress", counting_compress)
+     bug(
+@@ -330,7 +345,31 @@ def test_compression_once_per_step(monkeypatch: pytest.MonkeyPatch) -> None:
+             evolution_mode=EvolutionMode.BUG,
+         ),
+     )
+-    assert counts["n"] == 1
++    assert counts["n"] == 2
++
++
++def test_bug_checkpoint_order_and_orientation() -> None:
++    """BUG exposes the two sweeps and two compressions in execution order."""
++    observed: list[tuple[str, bool, int | None]] = []
++
++    def checkpoint(name: str, state: MPS, *, reflected: bool) -> None:
++        observed.append((name, reflected, state.orthogonality_center))
++
++    mps = random_mps([(2, 1, 2), (2, 2, 2), (2, 2, 1)])
++    bug(
++        mps,
++        MPO.ising(3, 1.0, 0.5),
++        AnalogSimParams(preset="exact", elapsed_time=0.1, dt=0.1, max_bond_dim=4),
++        checkpoint=checkpoint,
++    )
++    assert observed == [
++        ("first_half_sweep", False, 0),
++        ("first_compression", False, 2),
++        ("second_half_sweep", True, 0),
++        ("second_compression", True, 2),
++    ]
++    assert mps.orthogonality_center == 0
++    assert mps.flipped is False
+ 
+ 
+ def test_normalize_after_compression() -> None:
+@@ -349,6 +388,40 @@ def test_normalize_after_compression() -> None:
+     assert abs(mps.norm()) == pytest.approx(1.0, abs=1e-10)
+ 
+ 
++def test_bug_normalizes_without_full_chain_normalize(monkeypatch: pytest.MonkeyPatch) -> None:
++    """BUG rescales the canonical center instead of normalizing the full MPS."""
++    mps = random_mps([(2, 1, 3), (2, 3, 1)])
++
++    def reject_full_normalize(*_args: object, **_kwargs: object) -> None:
++        msg = "BUG should normalize only its canonical center tensor"
++        raise AssertionError(msg)
++
++    monkeypatch.setattr(MPS, "normalize", reject_full_normalize)
++    bug(
++        mps,
++        MPO.ising(2, 1.0, 0.5),
++        AnalogSimParams(preset="exact", get_state=True, elapsed_time=0.1, dt=0.1),
++    )
++    assert abs(mps.norm()) == pytest.approx(1.0, abs=1e-10)
++
++
++def test_bug_reuses_compression_endpoint_after_reflection(monkeypatch: pytest.MonkeyPatch) -> None:
++    """Normal BUG execution needs no gauge sweep between compression and reflection."""
++
++    def reject_center_recovery(*_args: object, **_kwargs: object) -> None:
++        msg = "endpoint-aware BUG should not need center recovery"
++        raise AssertionError(msg)
++
++    monkeypatch.setattr("mqt.yaqs.core.methods.bug._move_center_to_zero", reject_center_recovery)
++    mps = random_mps([(2, 1, 2), (2, 2, 2), (2, 2, 1)])
++    bug(
++        mps,
++        MPO.ising(3, 1.0, 0.5),
++        AnalogSimParams(preset="exact", get_state=True, elapsed_time=0.1, dt=0.1),
++    )
++    assert mps.orthogonality_center == 0
++
++
+ def test_bug_asymmetric_matches_mps_ordered_dense_reference() -> None:
+     """BUG agrees with dense evolution for an asymmetric Hamiltonian in MPS order."""
+     length = 3
+diff --git a/tests/core/methods/test_matrix_exponential.py b/tests/core/methods/test_matrix_exponential.py
+index 521daff5..6fdf319e 100644
+--- a/tests/core/methods/test_matrix_exponential.py
++++ b/tests/core/methods/test_matrix_exponential.py
+@@ -100,6 +100,19 @@ def test_expm_krylov_zero_norm() -> None:
+     mock_op.assert_not_called()
+ 
+ 
++def test_expm_krylov_stats_count_calls_and_operator_applications() -> None:
++    """Optional Krylov counters report calls and effective-operator work."""
++    matrix_exponential.reset_krylov_stats()
++    matrix_exponential.enable_krylov_stats()
++    try:
++        expm_krylov(lambda x: x, np.ones(3, dtype=np.complex128), 0.1)
++        stats = matrix_exponential.get_krylov_stats()
++    finally:
++        matrix_exponential.enable_krylov_stats(enabled=False)
++    assert stats["calls"] == 1
++    assert stats["operator_applications"] >= 1
++
++
+ def test_expm_krylov_numba_execution() -> None:
+     """Test execution path when Numba is enabled (large vector)."""
+     # Verify Numba module is available

@@ -1,0 +1,28 @@
+{
+  "base_runner_sha256": "3c07894c7f4141d238401958dacd702b43e62ed3479b9d71a399fe7685f0bf83",
+  "captured_utc": "2026-08-12T21:35:48.001016+00:00",
+  "logical_cpu_count": 8,
+  "machine": "arm64",
+  "matched_json_sha256": "1e6bef5912646e612d7c5c64d961271fdff84ff791cee07ccc37fd9a4e38948d",
+  "numeric_kernel_thread_environment": {
+    "MKL_NUM_THREADS": "8",
+    "NUMEXPR_NUM_THREADS": "8",
+    "OMP_NUM_THREADS": "8",
+    "OPENBLAS_NUM_THREADS": "8",
+    "VECLIB_MAXIMUM_THREADS": "8"
+  },
+  "numpy_version": "2.4.6",
+  "platform": "macOS-26.6-arm64-arm-64bit",
+  "processor": "arm",
+  "provenance_files": {
+    "pip_freeze.txt": "a595f216970acc37259e9fe0b1975b15d6906dbd07eddca63dd72b05e5ceecd5",
+    "yaqs_git_branch.txt": "8c0dbd25c99bbd6793d2b3a31cc81c6acc48531be9ce60155bbb08a404c3d3fc",
+    "yaqs_git_head.txt": "603d9e8a75626f44090322964decf558e73aa2ecf61dc4f37d7401e6bc583106",
+    "yaqs_git_status.txt": "b2b31b110866dbbfe20eaa84c5434a7b5ac1179b6d74a8cd12a0a12dd2abbe50",
+    "yaqs_worktree.patch": "cbddbf87e38d0d775a76e7b26122b668da16b3011313ffa1bbef2ee7705c1f4a"
+  },
+  "python_executable": "/Users/maximilianfrohlich/Desktop/BUG_August26/implementation/yaqs/.venv/bin/python",
+  "python_version": "3.12.11 (main, Sep 18 2025, 19:41:45) [Clang 20.1.4 ]",
+  "runner_sha256": "aca6298032709023494638bbc78e6abe631053c39c3ee2f25ba1a92edbfad5f0",
+  "scipy_version": "1.18.0"
+}

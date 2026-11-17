@@ -10,6 +10,11 @@ releases may include breaking changes.
 
 ## [Unreleased]
 
+The paper artifact branch includes the archived BUG MPS test data in
+[`paper/bug-mps-benchmarks`](paper/bug-mps-benchmarks/README.md), contributed by
+[**@MaxFroehlich1410**]. This data-only addition was pushed directly to the
+`bug-paper-final` branch.
+
 ### Added
 
 - added infrastructure for analog-digital simulation ([#525])
@@ -338,3 +343,5 @@ for previous changelogs._
 [Keep a Changelog]: https://keepachangelog.com/en/1.1.0/
 [Common Changelog]: https://common-changelog.org
 [Semantic Versioning]: https://semver.org/spec/v2.0.0.html
+
+[**@MaxFroehlich1410**]: https://github.com/MaxFroehlich1410

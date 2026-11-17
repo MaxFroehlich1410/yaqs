@@ -1,0 +1,11 @@
+ M CHANGELOG.md
+ M UPGRADING.md
+ M src/mqt/yaqs/core/data_structures/mps.py
+ M src/mqt/yaqs/core/data_structures/simulation_parameters.py
+ M src/mqt/yaqs/core/methods/bug.py
+ M src/mqt/yaqs/core/methods/decompositions.py
+ M src/mqt/yaqs/core/methods/matrix_exponential.py
+ M src/mqt/yaqs/core/methods/tdvp/primitives.py
+ M tests/core/data_structures/test_mps.py
+ M tests/core/methods/test_bug.py
+ M tests/core/methods/test_matrix_exponential.py

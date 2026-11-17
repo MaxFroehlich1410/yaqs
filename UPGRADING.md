@@ -6,6 +6,14 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
+### Paper benchmark data
+
+The `bug-paper-final` branch now tracks the original manuscript test data under
+[`paper/bug-mps-benchmarks`](paper/bug-mps-benchmarks/README.md). The directory
+README maps the data to Figure 4 and Tables I-III and explains how to retrieve
+the published version. Use a separate checkout when rerunning experiments to
+preserve the archived outputs.
+
 ### BUG compression now occurs after each half-sweep
 
 Alternating-endpoint BUG evolution now compresses and optionally normalizes the
